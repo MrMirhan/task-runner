@@ -18,7 +18,7 @@ const resolvers: Resolvers = {
 };
 
 const ev = (t: number, kind: RawEvent["kind"], extra: Partial<RawEvent> = {}): RawEvent => ({
-  t: T0 + t, kind, cwd: "/repo", branch: "feat/PPG-12-login", sessionId: "s1", ...extra,
+  t: T0 + t, kind, cwd: "/repo", branch: "feat/SHOP-12-login", sessionId: "s1", ...extra,
 });
 
 const sum = (rows: Array<{ kind: string; secs: number }>, kind: string) =>
@@ -66,7 +66,7 @@ test("a session started in a plain folder follows the repo it edits", () => {
 });
 
 test("branches become tasks with a kind and a ticket label", () => {
-  assert.deepEqual(taskInfo("feat/PPG-12-login"), { label: "PPG-12", kind: "feature" });
+  assert.deepEqual(taskInfo("feat/SHOP-12-login"), { label: "SHOP-12", kind: "feature" });
   assert.deepEqual(taskInfo("fix/null-pointer"), { label: "fix/null-pointer", kind: "fix" });
   assert.deepEqual(taskInfo("chore/ABC-7"), { label: "ABC-7", kind: "chore" });
   assert.deepEqual(taskInfo("main"), { label: "main", kind: "other" });

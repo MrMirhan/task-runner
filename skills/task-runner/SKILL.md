@@ -5,7 +5,7 @@ description: Use the task-runner memory tools and task loop. Load when the work 
 
 # task-runner
 
-Memory that survives sessions (a knowledge graph plus notes) and a task runner. The `task-runner` MCP server stores everything in a local SQLite file. The project comes from the working directory. You never pass it.
+Memory that survives sessions (a knowledge graph plus notes) and a task runner. The `task-runner` MCP server stores everything in one database: a local SQLite file, or the user's own server when this machine is signed in. The project comes from the working directory. You never pass it.
 
 ## At session start
 

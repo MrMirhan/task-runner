@@ -41,7 +41,7 @@ export function ownerFromRemote(url: string): string | null {
   return parts.length >= 2 ? parts[parts.length - 2].toLowerCase() : null;
 }
 
-/** A committed `.task-runner.json` such as `{ "project": "extranet", "org": "acme" }` pins the key for every clone and worktree. */
+/** A committed `.task-runner.json` such as `{ "project": "storefront", "org": "acme" }` pins the key for every clone and worktree. */
 function pinned(root: string): { project: string | null; org: string | null } {
   try {
     const parsed = JSON.parse(readFileSync(join(root, ".task-runner.json"), "utf8")) as { project?: unknown; org?: unknown };

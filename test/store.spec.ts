@@ -369,13 +369,13 @@ test("task groups stay with the branch that made them", () => {
 
 test("every folder a project was seen in maps back to it", () => {
   const { store } = memoryStore();
-  store.setContext({ project: "extranet", project_path: "/work/extranet" });
-  store.setContext({ project: "extranet", project_path: "/work/extranet-jellyfish" });
-  assert.equal(store.findProjectByPath("/work/extranet"), "extranet");
-  assert.equal(store.findProjectByPath("/work/extranet-jellyfish"), "extranet");
+  store.setContext({ project: "storefront", project_path: "/work/storefront" });
+  store.setContext({ project: "storefront", project_path: "/work/storefront-otter" });
+  assert.equal(store.findProjectByPath("/work/storefront"), "storefront");
+  assert.equal(store.findProjectByPath("/work/storefront-otter"), "storefront");
 
-  store.mergeProjects("extranet", "extranet-main");
-  assert.equal(store.findProjectByPath("/work/extranet-jellyfish"), "extranet-main");
+  store.mergeProjects("storefront", "storefront-main");
+  assert.equal(store.findProjectByPath("/work/storefront-otter"), "storefront-main");
 });
 
 test("keywords make an entity findable by words its facts never use", () => {

@@ -2,11 +2,11 @@
   "name": "task-runner",
   "displayName": "Task Runner",
   "version": "1.0.0",
-  "description": "Persistent knowledge-graph memory and a task runner for your agent. Local SQLite, MCP tools, a session-start briefing, a live side panel and memory reminders.",
+  "description": "Persistent knowledge-graph memory, a task runner, time tracking and shared rules for your agent. MCP tools, a session-start briefing, a live side panel and memory reminders. Local SQLite, or your own server for several machines.",
   "author": {
     "name": "Mirhan"
   },
-  "repository": "https://github.com/MrMirhan/claude-task-runner-mcp",
+  "repository": "https://github.com/MrMirhan/task-runner",
   "license": "MIT",
   "keywords": [
     "memory",
@@ -45,7 +45,7 @@
     "approve": {
       "type": "boolean",
       "title": "Skip permission prompts for the memory tools",
-      "description": "Approve this plugin's own memory and task tools automatically. They only touch the local memory database. clear_tasks still asks.",
+      "description": "Approve this plugin's own memory and task tools automatically. They only touch the memory database. clear_tasks still asks.",
       "default": true
     }
   }

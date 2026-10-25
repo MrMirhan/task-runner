@@ -74,25 +74,25 @@ test("transactions roll back, including nested ones", () => {
 
 test("a linked worktree resolves to the same project as its main checkout", () => {
   const base = mkdtempSync(join(tmpdir(), "tr-wt-"));
-  const main = join(base, "extranet");
-  const tree = join(base, "extranet-jellyfish");
+  const main = join(base, "storefront");
+  const tree = join(base, "storefront-otter");
   const git = (...args: string[]) =>
     execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: main, stdio: "pipe" });
   mkdirSync(main);
   git("init", "-q", "-b", "main");
-  git("remote", "add", "origin", "git@github.com:Acme/Extranet.git");
+  git("remote", "add", "origin", "git@github.com:Acme/Storefront.git");
   git("commit", "-q", "--allow-empty", "-m", "init");
-  git("worktree", "add", "-q", "-b", "feat/jellyfish", tree);
+  git("worktree", "add", "-q", "-b", "feat/otter", tree);
 
   const plain = detectProject(tree, undefined, {});
-  assert.equal(plain.project, "acme-extranet");
-  assert.equal(plain.branch, "feat/jellyfish");
-  assert.equal(detectProject(main, undefined, {}).project, "acme-extranet");
+  assert.equal(plain.project, "acme-storefront");
+  assert.equal(plain.branch, "feat/otter");
+  assert.equal(detectProject(main, undefined, {}).project, "acme-storefront");
   assert.notEqual(plain.project_path, detectProject(main, undefined, {}).project_path);
 
   // a key already stored for the main checkout (for example an imported one) wins for its worktrees too
-  const known = new Map([[detectProject(main, undefined, {}).project_path, "legacy-extranet"]]);
-  assert.equal(detectProject(tree, (p) => known.get(p) ?? null, {}).project, "legacy-extranet");
+  const known = new Map([[detectProject(main, undefined, {}).project_path, "legacy-storefront"]]);
+  assert.equal(detectProject(tree, (p) => known.get(p) ?? null, {}).project, "legacy-storefront");
 
   // a pinned key beats everything
   writeFileSync(join(tree, ".task-runner.json"), JSON.stringify({ project: "pinned" }));
@@ -102,11 +102,11 @@ test("a linked worktree resolves to the same project as its main checkout", () =
 
 test("a plain copy of a repo (same remote) keeps the key", () => {
   const base = mkdtempSync(join(tmpdir(), "tr-copy-"));
-  const a = join(base, "extranet");
-  const b = join(base, "extranet-copy");
+  const a = join(base, "storefront");
+  const b = join(base, "storefront-copy");
   mkdirSync(a);
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: a });
-  execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/extranet.git"], { cwd: a });
+  execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/storefront.git"], { cwd: a });
   cpSync(a, b, { recursive: true });
   assert.equal(detectProject(b, undefined, {}).project, detectProject(a, undefined, {}).project);
 });
