@@ -1221,6 +1221,14 @@ export class Store {
     return { learned: out };
   }
 
+  /** Every active preference across the account, for the dashboard. */
+  tasteAll() {
+    return this.db.all<TasteRow>(
+      `SELECT id, scope, ref, area, rule, confidence, hits, replaced, source, created_at, updated_at FROM taste
+       WHERE valid_until IS NULL ORDER BY confidence DESC, updated_at DESC`,
+    );
+  }
+
   tasteForget(id: string) {
     const t = this.clock();
     const row = this.db.get<{ id: string }>("SELECT id FROM taste WHERE id = ? AND valid_until IS NULL", required(id, "id"));

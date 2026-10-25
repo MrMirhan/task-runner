@@ -36,6 +36,8 @@ const need = (value: string | null | undefined, name: string): string => {
  *   GET    /tasks/status?project_key&task_group -> { tasks }
  *   GET    /tasks/result?project_key&task_id&task_group -> { result, error, status, title }
  *   DELETE /tasks?project_key&task_group
+ *   GET    /taste                             -> { preferences }
+ *   DELETE /taste?id
  *   GET    /export?project
  */
 export async function handleApi(store: StoreApi, req: ApiRequest, rules?: RulesStore): Promise<ApiResponse> {
@@ -62,7 +64,7 @@ async function route(store: StoreApi, { method, path, query, body }: ApiRequest)
         version: SERVER_VERSION,
         mode: "local",
         auth: "none",
-        features: ["memory", "tasks", "graph", "worklog", "rules"],
+        features: ["memory", "tasks", "graph", "worklog", "rules", "taste"],
       };
 
     case "GET /projects": {
@@ -203,6 +205,12 @@ async function route(store: StoreApi, { method, path, query, body }: ApiRequest)
           task_group: query.get("task_group"),
         })),
       };
+
+    case "GET /taste":
+      return { success: true, preferences: await store.tasteAll() };
+
+    case "DELETE /taste":
+      return { success: true, ...(await store.tasteForget(need(query.get("id"), "id"))) };
 
     case "GET /export":
       return await store.exportAll(query.get("project"));

@@ -39,7 +39,7 @@ var init_constants = __esm({
   "src/core/constants.ts"() {
     "use strict";
     SERVER_NAME = "task-runner";
-    SERVER_VERSION = "1.2.0";
+    SERVER_VERSION = "1.3.0";
     ENTITY_TYPES = [
       "preference",
       "decision",
@@ -22323,8 +22323,8 @@ var init_rules = __esm({
     "use strict";
     init_errors4();
     RULE_SCOPES = ["global", "device", "org", "project", "project_device"];
-    MAX_DOC_CHARS = 4e3;
-    MAX_RESOLVED_CHARS = 8e3;
+    MAX_DOC_CHARS = 8e3;
+    MAX_RESOLVED_CHARS = 16e3;
     ORDER = ["global", "device", "org", "project", "project_device"];
     SCHEMA = `
   CREATE TABLE IF NOT EXISTS rule_docs (
@@ -24107,6 +24107,13 @@ var init_store = __esm({
           }
         });
         return { learned: out };
+      }
+      /** Every active preference across the account, for the dashboard. */
+      tasteAll() {
+        return this.db.all(
+          `SELECT id, scope, ref, area, rule, confidence, hits, replaced, source, created_at, updated_at FROM taste
+       WHERE valid_until IS NULL ORDER BY confidence DESC, updated_at DESC`
+        );
       }
       tasteForget(id) {
         const t = this.clock();
@@ -26280,7 +26287,7 @@ async function route2(store, { method, path, query, body }) {
         version: SERVER_VERSION,
         mode: "local",
         auth: "none",
-        features: ["memory", "tasks", "graph", "worklog", "rules"]
+        features: ["memory", "tasks", "graph", "worklog", "rules", "taste"]
       };
     case "GET /projects": {
       const projects = await store.listProjects();
@@ -26405,6 +26412,10 @@ async function route2(store, { method, path, query, body }) {
           task_group: query.get("task_group")
         })
       };
+    case "GET /taste":
+      return { success: true, preferences: await store.tasteAll() };
+    case "DELETE /taste":
+      return { success: true, ...await store.tasteForget(need2(query.get("id"), "id")) };
     case "GET /export":
       return await store.exportAll(query.get("project"));
     default:

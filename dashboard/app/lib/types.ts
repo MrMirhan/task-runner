@@ -129,6 +129,20 @@ export interface ScopeFilter {
   ref: string;
 }
 
+export interface Preference {
+  id: string;
+  scope: "global" | "org" | "project";
+  ref: string;
+  area: string;
+  rule: string;
+  confidence: number;
+  hits: number;
+  replaced: string | null;
+  source: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export type TaskStatus = "pending" | "running" | "completed" | "failed";
 
 /** One row of GET /tasks/status. Content and result come from /tasks/result. */

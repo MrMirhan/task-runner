@@ -55,7 +55,7 @@ export async function sameKey(given: string, expected: string): Promise<boolean>
 export const isAppPath = (path: string) => path === "/mcp" || path === "/api" || path.startsWith("/api/");
 
 export const health = () =>
-  json({ ok: true, version: SERVER_VERSION, mode: "server", auth: "bearer", features: ["mcp", "memory", "tasks", "graph", "worklog", "rules"] });
+  json({ ok: true, version: SERVER_VERSION, mode: "server", auth: "bearer", features: ["mcp", "memory", "tasks", "graph", "worklog", "rules", "taste"] });
 
 export const bearerOf = (request: Request) => /^Bearer (.+)$/.exec(request.headers.get("Authorization") ?? "")?.[1]?.trim() ?? "";
 

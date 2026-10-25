@@ -108,3 +108,19 @@ test("merging projects carries their preferences and keeps the folder", () => {
   assert.equal(store.findProjectByPath("/work/shop"), "acme-shop");
   assert.equal(store.listProjects().find((p) => p.key === "acme-shop")?.project_path, "/work/shop");
 });
+
+test("the dashboard lists every active preference and forgets one", async () => {
+  const { handleApi } = await import("../src/core/rest.ts");
+  const { store } = memoryStore();
+  store.setContext({ project: P });
+  store.tasteLearn({ project: P, items: [{ scope: "global", area: "replies", rule: "Reply in Turkish." }] });
+  store.tasteLearn({ project: "other-shop", items: [{ scope: "project", area: "commits", rule: "Use one-line commits." }] });
+  const get = () => handleApi(store, { method: "GET", path: "/taste", query: new URLSearchParams(), body: null });
+  const listed = (await get()).body as { preferences: Array<{ id: string; ref: string }> };
+  assert.equal(listed.preferences.length, 2);
+
+  const id = listed.preferences.find((p) => p.ref === "other-shop")!.id;
+  const out = await handleApi(store, { method: "DELETE", path: "/taste", query: new URLSearchParams({ id }), body: null });
+  assert.equal(out.status, 200);
+  assert.equal(((await get()).body as { preferences: unknown[] }).preferences.length, 1);
+});

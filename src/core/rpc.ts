@@ -11,7 +11,7 @@ export const STORE_METHODS = [
   "createTasks", "nextTask", "completeTask", "failTask", "taskStatus", "taskSummary", "taskResult", "latestGroup",
   "listTaskGroups", "clearTasks",
   "worklogFileStates", "worklogSetting", "setWorklogSetting", "clearWorklog", "dropWorklogFiles", "replaceWorklogFile", "worklogRows",
-  "worklogActivity", "worklogPending", "worklogMarkExported", "worklogSession", "changedSince", "tasteList", "tasteLearn", "tasteForget", "totals",
+  "worklogActivity", "worklogPending", "worklogMarkExported", "worklogSession", "changedSince", "tasteList", "tasteAll", "tasteLearn", "tasteForget", "totals",
   "exportAll", "importAll",
 ] as const;
 

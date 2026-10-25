@@ -14,11 +14,12 @@ import EntityPanel from "./components/EntityPanel";
 import EntryList from "./components/EntryList";
 import TasksView from "./components/TasksView";
 import TimeView from "./components/TimeView";
+import TasteView from "./components/TasteView";
 import HeaderActions from "./components/HeaderActions";
 import RulesView from "./components/rules/RulesView";
 import SignIn from "./components/SignIn";
 
-type Tab = "graph" | "entries" | "tasks" | "time" | "rules";
+type Tab = "graph" | "entries" | "tasks" | "time" | "taste" | "rules";
 
 const PROJECT_KEY = "task-runner-project";
 
@@ -223,6 +224,7 @@ function LocalApp() {
     { key: "entries", label: "Notes" },
     { key: "tasks", label: "Tasks" },
     { key: "time", label: "Time" },
+    { key: "taste", label: "Taste" },
     { key: "rules", label: "Rules" },
   ];
 
@@ -292,9 +294,9 @@ function LocalApp() {
   } else if (projectKey) {
     body = (
       <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-3 md:min-h-0">
-        {tab !== "time" && <StatsCards stats={stats} taskGroups={taskGroups} />}
+        {tab !== "time" && tab !== "taste" && <StatsCards stats={stats} taskGroups={taskGroups} />}
 
-        {tab !== "time" && dataError && (
+        {tab !== "time" && tab !== "taste" && dataError && (
           <p className="text-sm text-bad" role="alert">
             {dataError}
           </p>
@@ -368,6 +370,10 @@ function LocalApp() {
             <div className="min-w-0 flex-1 p-4 md:overflow-y-auto">
               <TimeView projects={projects} refreshKey={reloadKey} />
             </div>
+          ) : tab === "taste" ? (
+            <div className="min-w-0 flex-1 p-4 md:overflow-y-auto">
+              <TasteView refreshKey={reloadKey} />
+            </div>
           ) : (
             <div className="min-w-0 flex-1 p-4 md:overflow-y-auto">
               <TasksView key={projectKey} projectKey={projectKey} refreshKey={reloadKey} onChange={reload} />
@@ -382,8 +388,10 @@ function LocalApp() {
     <div className="flex min-h-dvh flex-col md:h-dvh">
       <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface px-4 py-3">
         <h1 className="whitespace-nowrap text-base font-bold">Task Runner</h1>
-        {tab !== "rules" && <ProjectSelector projects={projects ?? []} selected={projectKey} onSelect={selectProject} />}
-        {tab !== "rules" && projectKey && <SearchBar key={projectKey} onSearch={search} status={searchStatus} />}
+        {tab !== "rules" && tab !== "taste" && (
+          <ProjectSelector projects={projects ?? []} selected={projectKey} onSelect={selectProject} />
+        )}
+        {tab !== "rules" && tab !== "taste" && projectKey && <SearchBar key={projectKey} onSearch={search} status={searchStatus} />}
         <HeaderActions onRefresh={reload} />
       </header>
       <main className="flex flex-1 flex-col md:min-h-0">{body}</main>
