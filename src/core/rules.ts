@@ -4,8 +4,8 @@ import { StoreError, assertIn, required } from "./errors.ts";
 export const RULE_SCOPES = ["global", "device", "org", "project", "project_device"] as const;
 export type RuleScope = (typeof RULE_SCOPES)[number];
 
-export const MAX_DOC_CHARS = 4000;
-export const MAX_RESOLVED_CHARS = 8000;
+export const MAX_DOC_CHARS = 8000;
+export const MAX_RESOLVED_CHARS = 16000;
 
 export interface RuleKey {
   scope: RuleScope;

@@ -197,7 +197,7 @@ npx task-runner-mcp rules edit --project       # open the document in $EDITOR
 npx task-runner-mcp rules                      # what this folder gets, and from where
 ```
 
-A document holds 4,000 characters at most and the sections of one session add up to 8,000. Keep rules short and imperative: they cost tokens in every session.
+A document holds 8,000 characters at most and the sections of one session add up to 16,000. Keep rules short and imperative: they cost tokens in every session.
 
 The agent can read the rules with the `rules` tool and can **propose** a rule when you state a lasting preference or correct it twice. A proposal waits. You approve or reject it in the panel (`/brain`, Rules tab), with `/rules approve <id>`, on the web page, or with `task-runner-mcp rules approve <id>`. Nothing the agent proposes is active before that, because an active rule reaches every future session.
 
