@@ -1,0 +1,30 @@
+// For a server first deployed before 1.0 (the "claude-task-runner-mcp" Worker). Deploying this over it keeps
+// every Durable Object: the stored data is upgraded in place on first use and the keys issued before still work.
+// Never remove a migration below, and never add a deleted_classes step: that deletes the class's data for good.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "claude-task-runner-mcp",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "STORAGE_OBJECT", "class_name": "TaskRunnerStorage" },
+      { "name": "ADMIN_OBJECT", "class_name": "AdminStorage" },
+      { "name": "MCP_OBJECT", "class_name": "TaskRunnerMCP" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TaskRunnerMCP"] },
+    { "tag": "v2", "new_sqlite_classes": ["TaskRunnerStorage"] },
+    { "tag": "v3" },
+    { "tag": "v4", "new_sqlite_classes": ["AdminStorage"] }
+  ],
+  "assets": {
+    "directory": "../dist/dashboard",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/mcp"],
+    "not_found_handling": "single-page-application"
+  },
+  "observability": { "enabled": true }
+}

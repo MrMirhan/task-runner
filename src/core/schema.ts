@@ -193,8 +193,93 @@ const migrations: Array<(db: Db) => void> = [
 
 export const SCHEMA_VERSION = migrations.length;
 
+const LEGACY_TABLES = ["projects", "entries", "tasks", "entities", "observations", "relations"];
+
+const tableSql = (db: Db, name: string) =>
+  db.get<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", name)?.sql ?? null;
+
+/**
+ * The hosted server before 1.0 kept the same data in tables without a schema version, with FTS
+ * triggers and no `seq` column. Those tables are renamed to legacy_* (kept as a backup) so the
+ * normal migrations can build the current ones; copyLegacy then fills them.
+ */
+function moveLegacyAside(db: Db): void {
+  const entries = tableSql(db, "entries");
+  if (!entries || /\bseq\b/.test(entries) || tableSql(db, "legacy_entries")) return;
+  db.transaction(() => {
+    for (const t of db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'trigger'")) {
+      db.exec(`DROP TRIGGER IF EXISTS "${t.name}"`);
+    }
+    db.exec("DROP TABLE IF EXISTS entries_fts; DROP TABLE IF EXISTS entities_fts;");
+    for (const table of LEGACY_TABLES) {
+      if (tableSql(db, table)) db.exec(`ALTER TABLE ${table} RENAME TO legacy_${table}`);
+    }
+    // Index names would collide with the new tables' indexes.
+    for (const i of db.all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL AND tbl_name LIKE 'legacy\\_%' ESCAPE '\\'",
+    )) {
+      db.exec(`DROP INDEX IF EXISTS "${i.name}"`);
+    }
+    db.run("DELETE FROM schema_meta WHERE key = 'version'");
+  });
+}
+
+function copyLegacy(db: Db): void {
+  if (!tableSql(db, "legacy_entries")) return;
+  if (db.get("SELECT 1 FROM schema_meta WHERE key = 'legacy_copied'")) return;
+  const has = (table: string) => tableSql(db, `legacy_${table}`) !== null;
+  db.transaction(() => {
+    const now = "unixepoch()";
+    if (has("projects")) {
+      db.run(`INSERT OR IGNORE INTO projects (key, project_path, project_name, created_at, updated_at)
+        SELECT key, project_path, project_name, COALESCE(created_at, ${now}), COALESCE(updated_at, created_at, ${now}) FROM legacy_projects`);
+    }
+    // Rows whose project row went missing still belong to that project.
+    const owners = ["entries", "tasks", "entities"].filter(has).map((t) => `SELECT project_key FROM legacy_${t}`).join(" UNION ");
+    if (owners) {
+      db.run(`INSERT OR IGNORE INTO projects (key, created_at, updated_at)
+        SELECT DISTINCT project_key, ${now}, ${now} FROM (${owners}) WHERE project_key IS NOT NULL`);
+    }
+    db.run(`INSERT OR IGNORE INTO project_paths (path, project_key, seen_at)
+      SELECT project_path, key, updated_at FROM projects WHERE project_path IS NOT NULL`);
+    if (has("entries")) {
+      db.run(`INSERT OR IGNORE INTO entries (id, project_key, scope, scope_ref, type, title, content, tags, session_id, created_at)
+        SELECT id, project_key, COALESCE(scope, 'project'), scope_ref, type, title, content, tags, session_id, COALESCE(created_at, ${now})
+        FROM legacy_entries WHERE project_key IS NOT NULL ORDER BY created_at, rowid`);
+    }
+    if (has("entities")) {
+      db.run(`INSERT OR IGNORE INTO entities (id, project_key, name, entity_type, summary, properties, importance, access_count,
+          last_accessed, created_at, updated_at, valid_until)
+        SELECT id, project_key, name, entity_type, summary, properties, COALESCE(importance, 0.5), COALESCE(access_count, 0),
+          COALESCE(last_accessed, updated_at, created_at, ${now}), COALESCE(created_at, ${now}), COALESCE(updated_at, created_at, ${now}), valid_until
+        FROM legacy_entities WHERE project_key IS NOT NULL ORDER BY created_at, rowid`);
+    }
+    if (has("observations")) {
+      db.run(`INSERT OR IGNORE INTO observations (id, entity_id, content, source, confidence, created_at, valid_until, superseded_by)
+        SELECT id, entity_id, content, COALESCE(source, 'agent'), COALESCE(confidence, 1.0), COALESCE(created_at, valid_from, ${now}),
+          valid_until, superseded_by
+        FROM legacy_observations WHERE entity_id IN (SELECT id FROM entities) ORDER BY created_at, rowid`);
+    }
+    if (has("relations")) {
+      db.run(`INSERT OR IGNORE INTO relations (id, source_id, target_id, relation_type, weight, context, created_at, valid_until)
+        SELECT id, source_id, target_id, relation_type, COALESCE(weight, 1.0), context, COALESCE(created_at, ${now}), valid_until
+        FROM legacy_relations WHERE source_id IN (SELECT id FROM entities) AND target_id IN (SELECT id FROM entities)`);
+    }
+    if (has("tasks")) {
+      db.run(`INSERT OR IGNORE INTO tasks (project_key, task_group, id, index_num, title, content, status, result, error, system_prompt,
+          started_at, completed_at, execution_time_ms, result_size, created_at)
+        SELECT project_key, task_group, id, index_num, title, content, COALESCE(status, 'pending'), result, error, system_prompt,
+          started_at, completed_at, execution_time_ms, result_size, COALESCE(created_at, ${now})
+        FROM legacy_tasks WHERE project_key IS NOT NULL`);
+    }
+    db.run("INSERT INTO schema_meta (key, value) VALUES ('legacy_copied', CAST(unixepoch() AS TEXT))");
+    db.run("INSERT INTO schema_meta (key, value) VALUES ('reindex', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  });
+}
+
 export function migrate(db: Db): void {
   db.exec("CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  moveLegacyAside(db);
   const row = db.get<{ value: string }>("SELECT value FROM schema_meta WHERE key = 'version'");
   const current = row ? Number(row.value) : 0;
   if (current > SCHEMA_VERSION) {
@@ -211,4 +296,5 @@ export function migrate(db: Db): void {
       );
     });
   }
+  copyLegacy(db);
 }

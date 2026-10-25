@@ -1,16 +1,17 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "task-runner-rules",
+  "name": "task-runner",
   "main": "src/worker.ts",
   "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
-    "bindings": [{ "name": "RULES", "class_name": "RulesDO" }]
+    "bindings": [{ "name": "STORAGE_OBJECT", "class_name": "TaskRunnerStorage" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RulesDO"] }],
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TaskRunnerStorage"] }],
   "assets": {
     "directory": "../dist/dashboard",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"],
+    "run_worker_first": ["/api/*", "/mcp"],
     "not_found_handling": "single-page-application"
   },
   "observability": { "enabled": true }

@@ -53,19 +53,25 @@ export async function sameKey(given: string, expected: string): Promise<boolean>
 /** Paths this handler answers. Everything else is the web page. */
 export const isAppPath = (path: string) => path === "/mcp" || path === "/api" || path.startsWith("/api/");
 
-export async function handleApp(deps: AppDeps, request: Request): Promise<Response> {
-  const url = new URL(request.url);
+export const health = () =>
+  json({ ok: true, version: SERVER_VERSION, mode: "server", auth: "bearer", features: ["mcp", "memory", "tasks", "graph", "worklog", "rules"] });
 
-  if (url.pathname === "/api/health") {
-    return json({ ok: true, version: SERVER_VERSION, mode: "server", auth: "bearer", features: ["mcp", "memory", "tasks", "graph", "worklog", "rules"] });
-  }
+export const bearerOf = (request: Request) => /^Bearer (.+)$/.exec(request.headers.get("Authorization") ?? "")?.[1]?.trim() ?? "";
+
+/** Health, the key check, then the routes. */
+export async function handleApp(deps: AppDeps, request: Request): Promise<Response> {
+  if (new URL(request.url).pathname === "/api/health") return health();
   if (!deps.key || deps.key.length < 24) {
     return json({ error: "Server key missing or shorter than 24 characters. Set it with: wrangler secret put TASK_RUNNER_KEY" }, 500);
   }
-  const bearer = /^Bearer (.+)$/.exec(request.headers.get("Authorization") ?? "")?.[1] ?? "";
-  if (!(await sameKey(bearer, deps.key))) return json({ error: "Unauthorized" }, 401);
-  if (Number(request.headers.get("Content-Length") ?? 0) > MAX_BODY) return json({ error: "Request too large" }, 413);
+  if (!(await sameKey(bearerOf(request), deps.key))) return json({ error: "Unauthorized" }, 401);
+  return routeApp(deps, request);
+}
 
+/** The routes, for a caller that already checked the key. */
+export async function routeApp(deps: Omit<AppDeps, "key">, request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  if (Number(request.headers.get("Content-Length") ?? 0) > MAX_BODY) return json({ error: "Request too large" }, 413);
   if (url.pathname === "/mcp") return mcp(deps, request);
 
   let body: unknown;
@@ -121,7 +127,7 @@ async function worklog(store: Store, url: URL, path: string): Promise<Response> 
  * Stateless MCP: a fresh server per request. The scope comes from X-Task-Runner-* headers when the
  * client sends them, otherwise from the last set_context, which is kept in the database.
  */
-async function mcp(deps: AppDeps, request: Request): Promise<Response> {
+async function mcp(deps: Omit<AppDeps, "key">, request: Request): Promise<Response> {
   const { store, rules } = deps;
   const header = (name: string) => request.headers.get(`X-Task-Runner-${name}`)?.trim() || null;
   const device = header("Device");

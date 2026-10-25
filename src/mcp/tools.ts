@@ -334,7 +334,8 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         const found = await store.recall({ project: s.project, q: query, entity_type, limit, all_projects });
         return {
           entities: found.entities.map((e) => shapeEntity(e, s)),
-          related: found.related.length ? found.related.map((r) => `${r.name} (${r.entity_type}) ${r.relation} ${r.via}`) : undefined,
+          related: found.related.length ? found.related.map((r) =>
+            r.outgoing ? `${r.via} ${r.relation} ${r.name} (${r.entity_type})` : `${r.name} (${r.entity_type}) ${r.relation} ${r.via}`) : undefined,
           notes: found.entries.map((e) => ({
             id: e.id, type: e.type, title: e.title, snippet: e.content, at: day(e.created_at),
             ...(e.project_key !== s.project ? { project: e.project_key } : {}),

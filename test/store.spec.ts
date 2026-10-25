@@ -412,6 +412,7 @@ test("linked neighbours of a hit move up and come back as related", () => {
   assert.equal(found.entities[0].name, "Checkout");
   assert.deepEqual(found.related.map((r) => r.name), ["Webhook retries"]);
   assert.equal(found.related[0].via, "Checkout");
+  assert.equal(found.related[0].outgoing, true);
 });
 
 test("a fact that restates another with a different number is flagged", () => {

@@ -674,18 +674,18 @@ export class Store {
     scored.sort((a, b) => b.score - a.score);
     const anchors = scored.slice(0, 5);
     const byId = new Map(scored.map((e) => [e.id as string, e]));
-    const related = new Map<string, { name: string; entity_type: string; relation: string; via: string }>();
+    const related = new Map<string, { name: string; entity_type: string; relation: string; via: string; outgoing: boolean }>();
     for (const anchor of anchors) {
-      for (const n of this.db.all<{ id: string; name: string; entity_type: string; relation_type: string; weight: number; project_key: string }>(
-        `SELECT e.id, e.name, e.entity_type, e.project_key, r.relation_type, r.weight
+      for (const n of this.db.all<{ id: string; name: string; entity_type: string; relation_type: string; weight: number; project_key: string; outgoing: number }>(
+        `SELECT e.id, e.name, e.entity_type, e.project_key, r.relation_type, r.weight, r.source_id = ? AS outgoing
          FROM relations r JOIN entities e ON e.id = CASE WHEN r.source_id = ? THEN r.target_id ELSE r.source_id END
          WHERE (r.source_id = ? OR r.target_id = ?) AND r.valid_until IS NULL AND e.valid_until IS NULL`,
-        anchor.id as string, anchor.id as string, anchor.id as string,
+        anchor.id as string, anchor.id as string, anchor.id as string, anchor.id as string,
       )) {
         const inList = byId.get(n.id);
         if (inList && inList !== anchor) inList.score += 0.08 * Math.min(1, n.weight);
         else if (!inList && (input.all_projects || n.project_key === input.project || n.project_key === GLOBAL_PROJECT)) {
-          if (!related.has(n.id)) related.set(n.id, { name: n.name, entity_type: n.entity_type, relation: n.relation_type, via: anchor.name as string });
+          if (!related.has(n.id)) related.set(n.id, { name: n.name, entity_type: n.entity_type, relation: n.relation_type, via: anchor.name as string, outgoing: Boolean(n.outgoing) });
         }
       }
     }
