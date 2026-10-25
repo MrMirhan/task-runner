@@ -129,3 +129,21 @@ export async function worklogCommand(args: string[]): Promise<void> {
     backend.close();
   }
 }
+
+/** Feeds the panel's Session tab: reads only this session's transcript, then what memory gained since it began. */
+export async function sessionCommand(args: string[]): Promise<void> {
+  const id = flag(args, "--id");
+  if (!id) throw new Error("Usage: task-runner-mcp session --id <session id> [--cwd dir]");
+  const backend = openBackend();
+  try {
+    const { store } = backend;
+    const detected = await projectFor(store, resolve(flag(args, "--cwd") ?? process.cwd()));
+    await scanWorklog(store, { sinceDays: null, session: id, options: worklogOptions(args), deviceId: deviceInfo().id });
+    const time = await store.worklogSession(id);
+    const since = time.started_at ?? Math.floor(Date.now() / 1000) - 60;
+    const changed = await store.changedSince({ project: detected.project, since });
+    process.stdout.write(`${JSON.stringify({ project: detected.project, branch: detected.branch, location: backend.location, ...time, ...changed })}\n`);
+  } finally {
+    backend.close();
+  }
+}

@@ -269,6 +269,8 @@ export async function scanWorklog(
     onFile?: (path: string) => void;
     /** Transcripts are per machine: the device id keeps two machines' files apart on a shared server. */
     deviceId?: string;
+    /** Read only this session's transcript. */
+    session?: string;
   } = {},
 ): Promise<ScanResult> {
   const options = input.options ?? DEFAULT_OPTIONS;
@@ -283,7 +285,9 @@ export async function scanWorklog(
   const resolvers = makeResolvers(await store.projectPaths());
   const result: ScanResult = { scanned: 0, skipped: 0 };
   const sinceDays = input.sinceDays === undefined ? 120 : input.sinceDays;
-  const files = listTranscripts(input.root ?? transcriptRoot(), sinceDays);
+  const files = listTranscripts(input.root ?? transcriptRoot(), sinceDays).filter(
+    (f) => !input.session || basename(f.path) === `${input.session}.jsonl`,
+  );
   const keyOf = (path: string) => (prefix ? `${prefix}${path}` : path);
 
   // Earlier builds stored this machine's files without the device prefix; reading them again under

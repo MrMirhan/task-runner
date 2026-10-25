@@ -48,12 +48,25 @@ const BAND = {
   props: { hasSurvey: false, isWorking: false, maxRows: 3, bodyColumns: 80, scroll: { offset: 0, bodyRows: 3 }, view: {} },
 } as const
 
+const run = ($: Parameters<TestBody>[0], command: string, args: string) =>
+  $.command.run({ command, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } })
+
 const submit = ($: Parameters<TestBody>[0], text: string) =>
   $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
 
-function stubCli(on: TestOn, toasts: string[] = []) {
+// What every test needs from beneath the plugin: where the session runs, which session it is, a clock.
+function base(on: TestOn) {
   on('session.cwd', () => ({ value: '/work/acme' }))
-  on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(SNAPSHOT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  on('session.id', () => ({ value: 'sess-1' }))
+  on('clock.now', () => ({ value: 1_700_000_000_000 }))
+  on('clock.after', () => ({ value: undefined }))
+}
+
+function stubCli(on: TestOn, toasts: string[] = []) {
+  base(on)
+  on('process.run', (_, e) => ({
+    value: { exitCode: 0, stdout: JSON.stringify(e.argv.includes('session') ? SESSION : SNAPSHOT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+  }))
   on('ui.toast', ($, e) => {
     toasts.push(e.text)
     return { value: undefined }
@@ -69,6 +82,7 @@ for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
 
     const ui = await $.ui.mount({ ...PANE, surface })
     await ui.press({ key: 'refresh' })
+    await ui.press({ key: 'tab-tasks' })
 
     expect(await ui.find({ type: 'Text', text: /ship-it .* 1\/3/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /task-002 Test/ })).toBeDefined()
@@ -184,12 +198,12 @@ test('the reminder can be switched off', { options: { nudge: false } }, async ($
 test('/recall prints facts and notes, /remember saves a note', async ($, on) => {
   stubCli(on)
 
-  const found = await $.command.run({ command: 'recall', args: 'jitter' })
+  const found = await run($, 'recall', 'jitter')
   expect(found.text).toContain('pitfall Retry on 429: Back off with jitter')
   expect(found.text).toContain('[decision] Use SQLite')
 
-  expect((await $.command.run({ command: 'recall', args: '  ' })).text).toMatch(/Usage/)
-  expect((await $.command.run({ command: 'remember', args: 'ship friday' })).text).toMatch(/Saved/)
+  expect((await run($, 'recall', '  ')).text).toMatch(/Usage/)
+  expect((await run($, 'remember', 'ship friday')).text).toMatch(/Saved/)
 })
 
 test('its own memory tools skip the prompt, clear_tasks and other servers do not', async ($, on) => {
@@ -222,7 +236,7 @@ test('approval can be switched off', { options: { approve: false } }, async ($, 
 
 test('a commit is recorded as a change note without the model', async ($, on) => {
   const notes: string[][] = []
-  on('session.cwd', () => ({ value: '/work/acme' }))
+  base(on)
   on('ui.log', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('tool.call', () => ({ result: 'ok' }))
@@ -260,7 +274,7 @@ const REPORT = {
 }
 
 test('the Time tab lists the week per task', async ($, on) => {
-  on('session.cwd', () => ({ value: '/work/acme' }))
+  base(on)
   on('ui.log', () => ({ value: undefined }))
   on('process.run', (_, e) => {
     const out = e.argv.includes('worklog') ? REPORT : SNAPSHOT
@@ -286,12 +300,12 @@ test('/worklog prints the report and rejects unknown periods', async ($, on) => 
     return { value: { exitCode: 0, stdout: 'Week 2026-10-19 to 2026-10-25\nYou 1h', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
 
-  const out = await $.command.run({ command: 'worklog', args: 'last-week' })
+  const out = await run($, 'worklog', 'last-week')
   expect(out.text).toContain('You 1h')
   expect(calls[0]).toContain('--last-week')
   expect(calls[0]).toContain('--detail')
 
-  expect((await $.command.run({ command: 'worklog', args: 'fortnight' })).text).toMatch(/Usage/)
+  expect((await run($, 'worklog', 'fortnight')).text).toMatch(/Usage/)
 })
 
 const RULES_SHOWN = {
@@ -308,7 +322,7 @@ const PENDING = [
 
 test('the Rules tab lists proposals and approving calls the CLI', async ($, on) => {
   const calls: string[][] = []
-  on('session.cwd', () => ({ value: '/work/acme' }))
+  base(on)
   on('ui.log', () => ({ value: undefined }))
   on('process.run', (_, e) => {
     calls.push([...e.argv])
@@ -349,12 +363,75 @@ test('/rules shows the rules and approves by id', async ($, on) => {
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
   })
 
-  const shown = await $.command.run({ command: 'rules', args: '' })
+  const shown = await run($, 'rules', '')
   expect(shown.text).toContain('Be brief.')
   expect(shown.text).not.toContain('Waiting for your decision')
 
-  const approved = await $.command.run({ command: 'rules', args: 'approve prop_9' })
+  const approved = await run($, 'rules', 'approve prop_9')
   expect(approved.text).toContain('prop_9')
   expect(calls.some(c => c.includes('approve') && c.includes('prop_9'))).toBe(true)
-  expect((await $.command.run({ command: 'rules', args: 'reject' })).text).toMatch(/Usage/)
+  expect((await run($, 'rules', 'reject')).text).toMatch(/Usage/)
+})
+
+const SESSION = {
+  project: 'acme-web',
+  branch: 'main',
+  location: '/home/u/.task-runner/memory.db',
+  you_s: 900,
+  agent_s: 5400,
+  wall_s: 6000,
+  started_at: 1_700_000_000,
+  prompts: 7,
+  edits: 12,
+  first_prompt: 'add a cart page',
+  scopes: [{ project_key: 'acme-web', branch: 'main', secs: 6300 }],
+  entities: [
+    { name: 'payments-service', entity_type: 'component', is_new: true, new_facts: 1, at: 1_700_000_100 },
+    { name: 'redis', entity_type: 'technology', is_new: false, new_facts: 2, at: 1_700_000_200 },
+  ],
+  notes: [{ id: 'entry_9', type: 'decision', title: 'Keep the pool at 10', created_at: 1_700_000_300 }],
+}
+
+function stubSession(on: TestOn, session: unknown = SESSION) {
+  base(on)
+  on('ui.log', () => ({ value: undefined }))
+  on('command.register', () => ({ value: { command: 'stub' } }))
+  on('process.run', (_, e) => {
+    const out = e.argv.includes('session') ? session : SNAPSHOT
+    return { value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+}
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the Session tab opens first and shows this session's time and saves on ${surface}`, async ($, on) => {
+    stubSession(on)
+    // Desktop rows are shorter than its text, so it gets a taller pane.
+    const ui = await $.ui.mount({ ...PANE, surface, props: { ...PANE.props, scroll: { offset: 0, bodyRows: surface === 'desktop' ? 40 : 20 } } })
+    await ui.press({ key: 'refresh' })
+
+    expect(await ui.find({ type: 'Text', text: /You 15m · agent 1h 30m · wall 1h 40m/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /7 prompt\(s\) · 12 file edit\(s\)/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Saved to memory this session \(3\)/ })).toBeDefined()
+    expect(await ui.find({ key: 'se-component-payments-service' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Keep the pool at 10/ })).toBeDefined()
+    await ui.unmount()
+  })
+}
+
+test('a long list pages inside the pane and the tabs stay in view', async ($, on) => {
+  const many = { ...SESSION, entities: [], notes: Array.from({ length: 40 }, (_, i) => ({ id: 'n' + i, type: 'note', title: 'Note number ' + i, created_at: 1_700_000_000 + i })) }
+  stubSession(on, many)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'refresh' })
+
+  expect(await ui.find({ key: 'tab-session' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Note number 0$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Note number 39$/ })).toBeUndefined()
+  expect(await ui.find({ key: 'page-down' })).toBeDefined()
+
+  await ui.press({ key: 'page-down' })
+  expect(await ui.find({ key: 'page-up' })).toBeDefined()
+  expect(await ui.find({ key: 'tab-session' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Note number 0$/ })).toBeUndefined()
+  await ui.unmount()
 })

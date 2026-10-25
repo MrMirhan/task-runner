@@ -1,19 +1,22 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Detail, RulesView, SearchState, Snapshot, Tab, WorklogView } from '../types'
+import type { Detail, RulesView, SearchState, SessionView, Snapshot, Tab, WorklogView } from '../types'
 
 const PANE = 'brain'
 const TITLE = 'Task Runner'
 
 const snapshotValue = atom({ plugin: 'task-runner', key: 'snapshot' } as const, null)
-const tabValue = atom({ plugin: 'task-runner', key: 'tab' } as const, 'tasks')
+const tabValue = atom({ plugin: 'task-runner', key: 'tab' } as const, 'session')
 const detailValue = atom({ plugin: 'task-runner', key: 'detail' } as const, null)
 const searchValue = atom({ plugin: 'task-runner', key: 'search' } as const, null)
 const worklogValue = atom({ plugin: 'task-runner', key: 'worklog' } as const, null)
 const rulesValue = atom({ plugin: 'task-runner', key: 'rules' } as const, null)
+const sessionValue = atom({ plugin: 'task-runner', key: 'session' } as const, null)
+const commitsValue = atom({ plugin: 'task-runner', key: 'commits' } as const, [])
 
 const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'session', label: 'Session' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'notes', label: 'Notes' },
   { id: 'graph', label: 'Graph' },
@@ -121,6 +124,23 @@ async function loadRules($: EngineInterface): Promise<void> {
   }
 }
 
+let sessionLoadedAt = 0
+let isLoadingSession = false
+
+// Reads only this session's transcript, so it is cheap enough to run after every turn.
+async function loadSession($: EngineInterface, force = false): Promise<void> {
+  const now = await $.clock.now()
+  if (isLoadingSession || (!force && now - sessionLoadedAt < 5000)) return
+  isLoadingSession = true
+  try {
+    const view = await cli<SessionView>($, ['session', '--id', await $.session.id()])
+    sessionLoadedAt = now
+    if (view && Array.isArray(view.scopes)) await update($, sessionValue, () => view)
+  } finally {
+    isLoadingSession = false
+  }
+}
+
 async function decide($: EngineInterface, action: 'approve' | 'reject', id: string): Promise<void> {
   await cliText($, ['rules', action, id])
   await loadRules($)
@@ -183,6 +203,7 @@ async function noteCommit($: EngineInterface): Promise<void> {
   if (!hash || hash === lastNotedCommit) return
   lastNotedCommit = hash
   await cli($, ['note', 'commit ' + subject + (lines[1] ? ' (' + lines[1].trim() + ')' : ''), '--type', 'change'])
+  await update($, commitsValue, list => [subject, ...list].slice(0, 20))
 }
 
 async function forget($: EngineInterface, name: string): Promise<void> {
@@ -231,6 +252,42 @@ function day(seconds: number): string {
   return new Date(seconds * 1000).toISOString().slice(0, 10)
 }
 
+function clock(seconds: number): string {
+  const d = new Date(seconds * 1000)
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+}
+
+// One entry in the pane's list: what it draws and how many rows it takes, so the list can be paged.
+type Line = { key: string; node: JSX.Element; rows: number }
+
+const rowsFor = (text: string, width: number) => Math.max(1, Math.ceil(text.length / Math.max(10, width)))
+
+// The pane draws its own window over a tab's list and keeps the tabs in view, so the wheel and the
+// scroll keys move the list, not the pane. Per tab: the first line shown.
+const offsets: Partial<Record<Tab, number>> = {}
+let shownTab: Tab = 'session'
+let pagingShown = false
+// Desktop scrolls a pane's body natively and raises ui.scroll only when the body has room to move, so the
+// window is drawn between two blank rows and held on the row under the top one. The terminal needs only the row below.
+let restOffset = 0
+let restedTab = ''
+let lastStep = 1
+let maxOffset = 0
+const PAGE_STEP = 5
+
+function moveList($: EngineInterface, step: number): void {
+  const current = offsets[shownTab] ?? 0
+  const next = Math.max(0, Math.min(maxOffset, current + step))
+  if (next === current) return
+  offsets[shownTab] = next
+  $.ui.invalidate('ui.render')
+}
+
+// Puts the pane on its rest row: the tabs at the top, a row of room above and below for the wheel.
+function toRest($: EngineInterface): void {
+  background($.ui.scroll({ to: { key: 'pane-top' }, in: PANE, block: 'start' }))
+}
+
 function toastFor(tool: string, args: Record<string, unknown>): string | null {
   const text = (key: string) => String(args[key] ?? '')
   switch (tool) {
@@ -273,6 +330,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     background(refresh($))
+    background(loadSession($, true))
     try {
       await $.command.register({ name: 'brain', description: 'Open the task and memory panel' })
       await $.command.register({ name: 'recall', description: 'Search project memory', argumentHint: '<keywords>' })
@@ -352,7 +410,7 @@ export const register: Register = (on, options) => {
         commits += 1
         if (wantsCommitNotes) {
           background(
-            noteCommit($).then(() => refresh($)),
+            noteCommit($).then(() => refresh($)).then(() => loadSession($, true)),
           )
         }
       }
@@ -369,6 +427,7 @@ export const register: Register = (on, options) => {
         if (message) $.ui.toast('task-runner: ' + message)
       }
       background(refresh($))
+      if (SAVES_MEMORY.has(name)) background(loadSession($, true))
       if (name === 'rules') background(loadRules($))
     }
     return ran
@@ -386,6 +445,7 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     background(refresh($))
+    if (e.agentId === undefined) background(loadSession($, true))
     const isMainTurn = e.agentId === undefined && !e.isAborted
     const shouldNudge = wantsNudge && isMainTurn && saves === 0 && pendingNudge === null && (commits > 0 || edits >= 6)
     if (shouldNudge) {
@@ -409,208 +469,371 @@ export const register: Register = (on, options) => {
     return next({ ...e, context: [...(e.context ?? []), note] })
   })
 
+  // The wheel, the arrows and the page keys move the list by lines; the pane itself stays on its rest row.
+  on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
+    if (pagingShown && restOffset && e.origin?.kind === 'plugin') return next({ ...e, offset: restOffset })
+    if (!pagingShown || e.by === 0 || e.origin?.kind !== 'person') return next(e)
+    const size = Math.abs(e.by)
+    // The terminal: an arrow is one line, a page key a page. Desktop: a trackpad sends many small moves.
+    const lines = restOffset === 0 ? (size >= 3 ? lastStep : 1) : Math.max(1, Math.round(size / 3))
+    moveList($, Math.sign(e.by) * Math.min(lines, PAGE_STEP * 4))
+    return next({ ...e, offset: restOffset })
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
     const Input = 'Input' in ui ? ui.Input : undefined
+    const graphic = e.surface !== 'terminal'
     const snapshot = await read($, snapshotValue)
     const tab = await read($, tabValue)
     const detail = await read($, detailValue)
     const search = await read($, searchValue)
     const worklog = await read($, worklogValue)
     const rules = await read($, rulesValue)
+    const session = await read($, sessionValue)
+    const commits = await read($, commitsValue)
     const width = Math.max(24, e.props.bodyColumns)
+    const fullHeight = e.props.scroll?.bodyRows || undefined
+    const redraw = () => $.ui.invalidate('ui.render')
+    shownTab = tab
+
+    const select = async (id: Tab) => {
+      await update($, tabValue, () => id)
+      if (id === 'time') await loadWorklog($)
+      if (id === 'rules') await loadRules($)
+      if (id === 'session') await loadSession($)
+    }
 
     const tabs = (
-      <Box flexDirection="row" columnGap={1}>
-        {TABS.map(item => (
-          <Button
-            key={'tab-' + item.id}
-            label={item.label}
-            variant={tab === item.id ? 'primary' : 'secondary'}
-            onPress={async () => {
-              await update($, tabValue, () => item.id)
-              if (item.id === 'time') await loadWorklog($)
-              if (item.id === 'rules') await loadRules($)
-            }}
-          />
-        ))}
-        <Button key="refresh" label="↻" onPress={() => refresh($)} />
+      <Box key="tabs" flexDirection="row" columnGap={1} flexWrap="wrap" flexShrink={0}>
+        {TABS.map((item, i) =>
+          graphic ? (
+            <Button
+              key={'tab-' + item.id}
+              label={item.label}
+              variant={tab === item.id ? 'primary' : 'secondary'}
+              onPress={() => select(item.id)}
+            />
+          ) : (
+            <Button key={'tab-' + item.id} plain hotkey={String(i + 1)} dimColor={tab !== item.id} onPress={() => select(item.id)}>
+              {(tab === item.id ? '[' + item.label + ']' : item.label)}
+            </Button>
+          ),
+        )}
+        {graphic ? (
+          <Button key="refresh" label="↻" onPress={() => Promise.all([refresh($), loadSession($, true)])} />
+        ) : (
+          <Button key="refresh" label="↻" plain hotkey="r" onPress={() => Promise.all([refresh($), loadSession($, true)])} />
+        )}
       </Box>
     )
 
-    if (!snapshot) {
-      return (
-        <Box flexDirection="column">
-          {tabs}
-          <Text dimColor>Loading project memory…</Text>
-        </Box>
-      )
-    }
+    const line = (key: string, node: JSX.Element, text = '', rows?: number): Line => ({
+      key,
+      node,
+      rows: rows ?? (graphic ? rowsFor(text, width - 2) : 1),
+    })
+    const plain = (key: string, text: string, props: { dimColor?: boolean; bold?: boolean } = {}) =>
+      line(key, <Text key={key} dimColor={props.dimColor} bold={props.bold} wrap="truncate-end">{text}</Text>, text)
+    const wrapped = (key: string, text: string, props: { dimColor?: boolean; bold?: boolean } = {}) =>
+      line(key, <Text key={key} dimColor={props.dimColor} bold={props.bold}>{text}</Text>, text, rowsFor(text, width - 2))
 
-    let body
-    if (tab === 'tasks') {
+    let lines: Line[] = []
+    let top: JSX.Element | null = null
+
+    if (!snapshot) {
+      lines = [plain('loading', 'Loading project memory…', { dimColor: true })]
+    } else if (tab === 'session') {
+      const s = session
+      if (!s) {
+        lines = [plain('session-loading', 'Reading this session…', { dimColor: true })]
+      } else {
+        lines.push(plain('s-head', 'This session' + (s.started_at ? ' · since ' + clock(s.started_at) : ''), { bold: true }))
+        lines.push(plain('s-time', 'You ' + hours(s.you_s) + ' · agent ' + hours(s.agent_s) + ' · wall ' + hours(s.wall_s)))
+        lines.push(
+          plain('s-work', s.prompts + ' prompt(s) · ' + s.edits + ' file edit(s) · ' + commits.length + ' commit(s)', { dimColor: true }),
+        )
+        if (s.first_prompt) lines.push(plain('s-first', 'Started from: ' + s.first_prompt, { dimColor: true }))
+        if (s.scopes.length > 1) {
+          lines.push(plain('s-scopes', 'Worked in: ' + s.scopes.map(x => x.project_key + ' ' + hours(x.secs)).join(', '), { dimColor: true }))
+        }
+        const group = snapshot.tasks
+        if (group && group.summary.pending + group.summary.running > 0) {
+          lines.push(
+            plain(
+              's-tasks',
+              group.summary.task_group + ' ' + bar(group.summary.completed, group.summary.total, 10) + ' ' + group.summary.completed + '/' + group.summary.total,
+            ),
+          )
+        }
+        const saved = s.entities.length + s.notes.length
+        lines.push(plain('s-saved', saved ? 'Saved to memory this session (' + saved + ')' : 'Nothing saved to memory yet', { bold: true }))
+        if (!saved) {
+          lines.push(wrapped('s-saved-hint', 'The agent saves with remember and save_memory. /remember <text> adds a note.', { dimColor: true }))
+        }
+        for (const entity of s.entities) {
+          const mark = entity.is_new ? '+ ' : '~ '
+          const extra = entity.is_new ? '' : ' +' + entity.new_facts + ' fact(s)'
+          lines.push(
+            line(
+              'se-' + entity.entity_type + '-' + entity.name,
+              <Button key={'se-' + entity.entity_type + '-' + entity.name} plain onPress={() => select('graph').then(() => openDetail($, entity.name))}>
+                {mark + entity.name} <Text dimColor>{entity.entity_type + extra}</Text>
+              </Button>,
+              mark + entity.name + entity.entity_type + extra,
+              graphic ? 2 : 1,
+            ),
+          )
+        }
+        for (const note of s.notes) lines.push(plain('sn-' + note.id, clock(note.created_at) + ' [' + note.type + '] ' + note.title))
+        if (commits.length) {
+          lines.push(plain('s-commits', 'Commits', { bold: true }))
+          commits.forEach((subject, i) => lines.push(plain('sc-' + i, subject, { dimColor: true })))
+        }
+        if (rules) {
+          lines.push(
+            plain(
+              's-rules',
+              'Rules: ' + rules.parts.length + ' section(s), ' + rules.chars + ' chars' + (rules.pending.length ? ' · ' + rules.pending.length + ' to review' : ''),
+              { dimColor: true },
+            ),
+          )
+        }
+      }
+    } else if (tab === 'tasks') {
       const group = snapshot.tasks
-      body = !group ? (
-        <Text dimColor>No task group yet. Multi-step work shows up here once the agent calls create_task_group.</Text>
-      ) : (
-        <Box flexDirection="column">
-          <Text bold>
+      if (!group) {
+        lines = [wrapped('no-tasks', 'No task group yet. Multi-step work shows up here once the agent calls create_task_group.', { dimColor: true })]
+      } else {
+        top = (
+          <Text key="group-head" bold wrap="truncate-end">
             {group.summary.task_group} {bar(group.summary.completed, group.summary.total, Math.min(20, width - 16))}{' '}
             {group.summary.completed}/{group.summary.total}
             {group.summary.failed ? ' · ' + group.summary.failed + ' failed' : ''}
           </Text>
-          {group.items.map(item => (
-            <Box flexDirection="column">
-              <Text dimColor={item.status === 'completed' || item.status === 'pending'}>
-                {GLYPH[item.status] ?? '?'} {item.id} {item.title}
-              </Text>
-              {item.error ? <Text color="red">    {item.error}</Text> : null}
-            </Box>
-          ))}
-        </Box>
-      )
+        )
+        for (const item of group.items) {
+          lines.push(
+            plain('task-' + item.id, (GLYPH[item.status] ?? '?') + ' ' + item.id + ' ' + item.title, {
+              dimColor: item.status === 'completed' || item.status === 'pending',
+            }),
+          )
+          if (item.error) lines.push(line('task-err-' + item.id, <Text key={'task-err-' + item.id} color="red">{'    ' + item.error}</Text>, item.error))
+        }
+      }
     } else if (tab === 'notes') {
-      body = snapshot.notes.length ? (
-        <Box flexDirection="column">
-          {snapshot.notes.map(note => (
-            <Text>
-              <Text dimColor>{day(note.created_at)} {note.type} </Text>
-              {note.title}
-            </Text>
-          ))}
-        </Box>
-      ) : (
-        <Text dimColor>No notes yet. /remember &lt;text&gt; saves one.</Text>
-      )
+      lines = snapshot.notes.length
+        ? snapshot.notes.map(note =>
+            line(
+              'note-' + note.id,
+              <Text key={'note-' + note.id} wrap="truncate-end">
+                <Text dimColor>{day(note.created_at)} {note.type} </Text>
+                {note.title}
+              </Text>,
+              note.title + note.type + '0000-00-00 ',
+            ),
+          )
+        : [plain('no-notes', 'No notes yet. /remember <text> saves one.', { dimColor: true })]
     } else if (tab === 'graph') {
-      body = (
-        <Box flexDirection="column">
-          {detail ? (
-            <Box flexDirection="column" borderStyle="round" paddingX={1}>
-              <Text bold>
-                {detail.name} <Text dimColor>({detail.type})</Text>
-              </Text>
-              {detail.summary ? <Text>{detail.summary}</Text> : null}
-              {detail.facts.map(fact => (
-                <Text>• {fact}</Text>
-              ))}
-              {detail.relations.map(relation => (
-                <Text dimColor>↔ {relation}</Text>
-              ))}
-              <Box flexDirection="row" columnGap={1}>
-                <Button key="close-detail" label="Close" onPress={() => update($, detailValue, () => null)} />
-                <Button key="forget" label="Forget" onPress={() => forget($, detail.name)} />
-              </Box>
+      if (detail) {
+        top = (
+          <Box key="detail" flexDirection="column" borderStyle="round" paddingX={1} flexShrink={0}>
+            <Text bold wrap="truncate-end">
+              {detail.name} <Text dimColor>({detail.type})</Text>
+            </Text>
+            {detail.summary ? <Text wrap="truncate-end">{detail.summary}</Text> : null}
+            {detail.facts.slice(0, 6).map(fact => (
+              <Text wrap="truncate-end">• {fact}</Text>
+            ))}
+            {detail.facts.length > 6 ? <Text dimColor>+{detail.facts.length - 6} more fact(s)</Text> : null}
+            {detail.relations.slice(0, 4).map(relation => (
+              <Text dimColor wrap="truncate-end">↔ {relation}</Text>
+            ))}
+            <Box flexDirection="row" columnGap={1}>
+              <Button key="close-detail" label="Close" onPress={() => update($, detailValue, () => null)} />
+              <Button key="forget" label="Forget" onPress={() => forget($, detail.name)} />
             </Box>
-          ) : null}
-          {snapshot.entities.length === 0 ? (
-            <Text dimColor>The graph is empty. The agent fills it with remember.</Text>
-          ) : (
-            snapshot.entities.map(entity => (
+          </Box>
+        )
+      }
+      lines = snapshot.entities.length
+        ? snapshot.entities.map(entity =>
+            line(
+              entity.id,
               <Button key={entity.id} plain onPress={() => openDetail($, entity.name)}>
                 {dots(entity.importance)} {entity.name} <Text dimColor>{entity.entity_type}</Text>
-              </Button>
-            ))
-          )}
-        </Box>
-      )
+              </Button>,
+              entity.name + entity.entity_type + '●●●●● ',
+              graphic ? 2 : 1,
+            ),
+          )
+        : [plain('graph-empty', 'The graph is empty. The agent fills it with remember.', { dimColor: true })]
     } else if (tab === 'rules') {
-      body = !rules ? (
-        <Text dimColor>Reading your rules…</Text>
-      ) : (
-        <Box flexDirection="column">
-          <Text bold>Rules for this session ({rules.chars} characters)</Text>
-          <Text dimColor>from {rules.source}</Text>
-          {rules.parts.length === 0 ? (
-            <Text dimColor>No rules yet. Add some with `task-runner-mcp rules set "..."` or on the web page.</Text>
-          ) : (
-            rules.parts.map(part => (
-              <Text>
+      if (!rules) {
+        lines = [plain('rules-loading', 'Reading your rules…', { dimColor: true })]
+      } else {
+        lines.push(plain('rules-head', 'Rules for this session (' + rules.chars + ' characters)', { bold: true }))
+        lines.push(plain('rules-source', 'from ' + rules.source, { dimColor: true }))
+        if (rules.parts.length === 0) {
+          lines.push(wrapped('rules-none', 'No rules yet. Add some with `task-runner-mcp rules set "..."` or on the web page.', { dimColor: true }))
+        }
+        rules.parts.forEach((part, i) =>
+          lines.push(
+            line(
+              'part-' + i,
+              <Text key={'part-' + i} wrap="truncate-end">
                 · {part.label} <Text dimColor>{part.chars} chars</Text>
-              </Text>
-            ))
-          )}
-          <Text bold>{rules.pending.length ? 'Waiting for your decision' : 'No proposals waiting'}</Text>
-          {rules.pending.map(proposal => (
-            <Box flexDirection="column" borderStyle="round" paddingX={1}>
-              <Text bold>
-                {proposal.where} <Text dimColor>{proposal.mode} by {proposal.author}</Text>
-              </Text>
-              {proposal.reason ? <Text dimColor>why: {proposal.reason}</Text> : null}
-              <Text>{proposal.text}</Text>
-              <Box flexDirection="row" columnGap={1}>
-                <Button key={'approve-' + proposal.id} label="Approve" variant="primary" onPress={() => decide($, 'approve', proposal.id)} />
-                <Button key={'reject-' + proposal.id} label="Reject" onPress={() => decide($, 'reject', proposal.id)} />
-              </Box>
-            </Box>
-          ))}
-        </Box>
-      )
+              </Text>,
+              part.label,
+            ),
+          ),
+        )
+        lines.push(plain('pending-head', rules.pending.length ? 'Waiting for your decision' : 'No proposals waiting', { bold: true }))
+        for (const proposal of rules.pending) {
+          const text = proposal.text + (proposal.reason ? ' why: ' + proposal.reason : '')
+          lines.push(
+            line(
+              'proposal-' + proposal.id,
+              <Box key={'proposal-' + proposal.id} flexDirection="column" borderStyle="round" paddingX={1}>
+                <Text bold wrap="truncate-end">
+                  {proposal.where} <Text dimColor>{proposal.mode} by {proposal.author}</Text>
+                </Text>
+                {proposal.reason ? <Text dimColor wrap="truncate-end">why: {proposal.reason}</Text> : null}
+                <Text>{proposal.text}</Text>
+                <Box flexDirection="row" columnGap={1}>
+                  <Button key={'approve-' + proposal.id} label="Approve" variant="primary" onPress={() => decide($, 'approve', proposal.id)} />
+                  <Button key={'reject-' + proposal.id} label="Reject" onPress={() => decide($, 'reject', proposal.id)} />
+                </Box>
+              </Box>,
+              text,
+              rowsFor(proposal.text, width - 4) * (graphic ? 1.5 : 1) + (proposal.reason ? 1 : 0) + (graphic ? 6 : 4),
+            ),
+          )
+        }
+      }
     } else if (tab === 'time') {
-      const peak = Math.max(1, ...(worklog?.days ?? []).map(d => d.you_s + d.agent_s))
-      body = !worklog ? (
-        <Text dimColor>Reading the session transcripts… the first run can take a minute.</Text>
-      ) : (
-        <Box flexDirection="column">
-          <Text bold>{worklog.label}</Text>
-          <Text>
-            You {hours(worklog.totals.you_s)} · agent {hours(worklog.totals.agent_s)} · wall {hours(worklog.totals.wall_s)}
-          </Text>
-          <Text dimColor>Agent time adds up across parallel sessions.</Text>
-          {worklog.days.map(day => (
-            <Text>
-              <Text dimColor>{day.day.slice(5)} </Text>
-              {bar(day.you_s + day.agent_s, peak, 16)} {hours(day.you_s)} / {hours(day.agent_s)}
-            </Text>
-          ))}
-          {worklog.rows.map(row => (
-            <Text>
-              <Text bold>{row.label}</Text> <Text dimColor>{row.project} · {row.kind}</Text> you {hours(row.you_s)} · agent{' '}
-              {hours(row.agent_s)}
-            </Text>
-          ))}
-          <Text dimColor>/worklog prints the full report with notes and commits.</Text>
-        </Box>
-      )
+      if (!worklog) {
+        lines = [wrapped('time-loading', 'Reading the session transcripts… the first run can take a minute.', { dimColor: true })]
+      } else {
+        const peak = Math.max(1, ...worklog.days.map(d => d.you_s + d.agent_s))
+        lines.push(plain('time-label', worklog.label, { bold: true }))
+        lines.push(plain('time-total', 'You ' + hours(worklog.totals.you_s) + ' · agent ' + hours(worklog.totals.agent_s) + ' · wall ' + hours(worklog.totals.wall_s)))
+        lines.push(plain('time-note', 'Agent time adds up across parallel sessions.', { dimColor: true }))
+        for (const d of worklog.days) {
+          lines.push(
+            line(
+              'day-' + d.day,
+              <Text key={'day-' + d.day} wrap="truncate-end">
+                <Text dimColor>{d.day.slice(5)} </Text>
+                {bar(d.you_s + d.agent_s, peak, 16)} {hours(d.you_s)} / {hours(d.agent_s)}
+              </Text>,
+            ),
+          )
+        }
+        worklog.rows.forEach((row, i) =>
+          lines.push(
+            line(
+              'row-' + i,
+              <Text key={'row-' + i} wrap="truncate-end">
+                <Text bold>{row.label}</Text> <Text dimColor>{row.project} · {row.kind}</Text> you {hours(row.you_s)} · agent{' '}
+                {hours(row.agent_s)}
+              </Text>,
+              row.label + row.project + row.kind + ' you 00h 00m · agent 00h 00m',
+            ),
+          ),
+        )
+        lines.push(plain('time-more', '/worklog prints the full report with notes and commits.', { dimColor: true }))
+      }
     } else {
-      body = (
-        <Box flexDirection="column">
-          {Input ? (
-            <Input
-              key="query"
-              label="Search"
-              placeholder="keywords, any language"
-              value={search?.query ?? ''}
-              submitLabel="search"
-              onSubmit={text => runSearch($, text)}
-            />
-          ) : (
-            <Text dimColor>Type /recall &lt;keywords&gt; to search.</Text>
-          )}
-          {search && search.entities.length === 0 && search.notes.length === 0 ? (
-            <Text dimColor>Nothing found.</Text>
-          ) : null}
-          {search?.entities.map(entity => (
-            <Text>
-              <Text bold>{entity.name}</Text> <Text dimColor>{entity.entity_type}</Text> {entity.facts.join('; ')}
-            </Text>
-          ))}
-          {search?.notes.map(note => <Text dimColor>{note}</Text>)}
-        </Box>
+      top = Input ? (
+        <Input
+          key="query"
+          label="Search"
+          placeholder="keywords, any language"
+          value={search?.query ?? ''}
+          submitLabel="search"
+          onSubmit={text => runSearch($, text)}
+        />
+      ) : (
+        <Text key="query-hint" dimColor>Type /recall &lt;keywords&gt; to search.</Text>
       )
+      if (search && search.entities.length === 0 && search.notes.length === 0) lines.push(plain('nothing', 'Nothing found.', { dimColor: true }))
+      for (const entity of search?.entities ?? []) {
+        const text = entity.name + ' ' + entity.entity_type + ' ' + entity.facts.join('; ')
+        lines.push(
+          line(
+            'hit-' + entity.entity_type + '-' + entity.name,
+            <Text key={'hit-' + entity.entity_type + '-' + entity.name}>
+              <Text bold>{entity.name}</Text> <Text dimColor>{entity.entity_type}</Text> {entity.facts.join('; ')}
+            </Text>,
+            text,
+            rowsFor(text, width - 2),
+          ),
+        )
+      }
+      ;(search?.notes ?? []).forEach((note, i) => lines.push(plain('hit-note-' + i, note, { dimColor: true })))
     }
 
-    const { stats } = snapshot
-    return (
-      <Box flexDirection="column" gap={1}>
+    const footerText = snapshot
+      ? snapshot.project + (snapshot.branch ? ' @ ' + snapshot.branch : '') + ' · ' + snapshot.stats.entities + ' entities · ' +
+        snapshot.stats.relations + ' relations · ' + snapshot.stats.entries + ' notes'
+      : ''
+
+    // The window: what fits between the fixed rows, counted in the pane's rows. Desktop text is taller than a row.
+    const unit = graphic ? 1.5 : 1
+    const fixedRows = graphic ? 9 + (top ? 5 : 0) : 4 + (width < 60 ? 1 : 0) + (top ? (tab === 'graph' ? 10 : 2) : 0)
+    const room = fullHeight ? Math.max(3, (fullHeight - fixedRows) / unit) : Infinity
+    const fits = (from: number) => {
+      let used = 0
+      let end = from
+      while (end < lines.length && (used + lines[end]!.rows <= room || end === from)) used += lines[end++]!.rows
+      return end
+    }
+    let fromEnd = lines.length
+    for (let used = 0; fromEnd > 0 && used + lines[fromEnd - 1]!.rows <= room; ) used += lines[--fromEnd]!.rows
+    maxOffset = Math.max(0, fromEnd)
+    const start = Math.min(offsets[tab] ?? 0, maxOffset)
+    offsets[tab] = start
+    const end = fits(start)
+    lastStep = Math.max(1, end - start - 1)
+    const above = start
+    const below = lines.length - end
+
+    pagingShown = !!fullHeight
+    restOffset = fullHeight && graphic ? 1 : 0
+    if (fullHeight && e.surface === 'desktop' && restedTab !== tab) {
+      restedTab = tab
+      // Desktop may not have laid the pane out yet when the first try goes, so a few more follow.
+      for (const ms of [60, 300, 800]) $.clock.after(ms, () => toRest($))
+    }
+
+    const pager =
+      above || below ? (
+        <Box key="pager" flexDirection="row" columnGap={2} flexShrink={0}>
+          {above ? <Button key="page-up" label={'↑ ' + above + ' more'} plain dimColor hotkey={graphic ? undefined : 'k'} onPress={() => moveList($, -Math.max(1, end - start - 1))} /> : null}
+          {below ? <Button key="page-down" label={'↓ ' + below + ' more'} plain dimColor hotkey={graphic ? undefined : 'j'} onPress={() => moveList($, Math.max(1, end - start - 1))} /> : null}
+        </Box>
+      ) : null
+
+    const body = (
+      <Box key="pane-top" flexDirection="column" height={fullHeight} overflow="hidden" rowGap={graphic ? 1 : 0}>
         {tabs}
+        {top}
+        <Box key="list" flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+          {lines.slice(start, end).map(l => l.node)}
+        </Box>
+        {pager}
+        <Text key="footer" dimColor wrap="truncate-end">{footerText}</Text>
+      </Box>
+    )
+    if (!fullHeight) return body
+    // The rows out of view only give the wheel and the scroll keys room to raise ui.scroll.
+    return (
+      <Box flexDirection="column">
+        {graphic ? <Box key="scroll-row-top" height={1} /> : null}
         {body}
-        <Text dimColor>
-          {snapshot.project}
-          {snapshot.branch ? ' @ ' + snapshot.branch : ''} · {stats.entities} entities · {stats.relations} relations ·{' '}
-          {stats.entries} notes
-        </Text>
+        <Box key="scroll-row" height={1} />
       </Box>
     )
   })

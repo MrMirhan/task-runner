@@ -1,4 +1,4 @@
-export type Tab = 'tasks' | 'notes' | 'graph' | 'search' | 'time' | 'rules'
+export type Tab = 'session' | 'tasks' | 'notes' | 'graph' | 'search' | 'time' | 'rules'
 
 export type TaskRow = {
   id: string
@@ -83,6 +83,22 @@ export type RulesView = {
   }>
 }
 
+export type SessionView = {
+  project: string
+  branch: string | null
+  location: string
+  you_s: number
+  agent_s: number
+  wall_s: number
+  started_at: number | null
+  prompts: number
+  edits: number
+  first_prompt: string | null
+  scopes: Array<{ project_key: string; branch: string; secs: number }>
+  entities: Array<{ name: string; entity_type: string; is_new: boolean; new_facts: number; at: number }>
+  notes: Array<{ id: string; type: string; title: string; created_at: number }>
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'task-runner': {
@@ -92,6 +108,8 @@ declare module 'claude-code' {
       search: SearchState | null
       worklog: WorklogView | null
       rules: RulesView | null
+      session: SessionView | null
+      commits: string[]
     }
   }
 }

@@ -23946,6 +23946,68 @@ var init_store = __esm({
           this.db.run(`DELETE FROM worklog_files${where.replace("%c", "path")}`, ...args);
         });
       }
+      /** Time and activity of one agent session, from the rows its transcript produced. */
+      worklogSession(sessionId) {
+        const sid = required2(sessionId, "session");
+        const time3 = this.db.get(
+          `SELECT SUM(ai_s) AS ai_s, SUM(human_s) AS human_s, SUM(MIN(60, ai_s + human_s)) AS wall_s, MIN(minute) AS first, MAX(minute) AS last
+       FROM (SELECT minute,
+                    SUM(CASE WHEN kind = 'ai' THEN secs ELSE 0 END) AS ai_s,
+                    SUM(CASE WHEN kind = 'human' THEN secs ELSE 0 END) AS human_s
+             FROM worklog_minutes WHERE session_id = ? GROUP BY minute)`,
+          sid
+        );
+        const scopes = this.db.all(
+          `SELECT project_key, branch, SUM(secs) AS secs FROM worklog_minutes WHERE session_id = ?
+       GROUP BY project_key, branch ORDER BY secs DESC`,
+          sid
+        );
+        const facts = this.db.get(
+          `SELECT SUM(prompts) AS prompts, SUM(edits) AS edits, MIN(first_prompt) AS first_prompt FROM worklog_facts
+       WHERE file IN (SELECT DISTINCT file FROM worklog_minutes WHERE session_id = ?)`,
+          sid
+        );
+        return {
+          session: sid,
+          agent_s: time3?.ai_s ?? 0,
+          you_s: time3?.human_s ?? 0,
+          wall_s: time3?.wall_s ?? 0,
+          started_at: time3?.first == null ? null : time3.first * 60,
+          last_at: time3?.last == null ? null : time3.last * 60 + 59,
+          prompts: facts?.prompts ?? 0,
+          edits: facts?.edits ?? 0,
+          first_prompt: facts?.first_prompt ?? null,
+          scopes
+        };
+      }
+      /** What changed in a project's memory since a moment: new or extended entities and new notes. */
+      changedSince(input) {
+        const project = required2(input.project, "project");
+        const limit = clamp(Math.floor(input.limit ?? 20), 1, 100);
+        const entities = this.db.all(
+          `SELECT e.name, e.entity_type, e.created_at >= ? AS is_new,
+              (SELECT COUNT(*) FROM observations o WHERE o.entity_id = e.id AND o.created_at >= ? AND o.valid_until IS NULL) AS new_facts,
+              e.updated_at AS at
+       FROM entities e
+       WHERE e.project_key IN (?, ?) AND e.valid_until IS NULL AND e.updated_at >= ?
+       ORDER BY e.updated_at DESC LIMIT ?`,
+          input.since,
+          input.since,
+          project,
+          GLOBAL_PROJECT,
+          input.since,
+          limit
+        );
+        const notes = this.db.all(
+          `SELECT id, type, title, created_at FROM entries WHERE project_key IN (?, ?) AND created_at >= ?
+       ORDER BY created_at DESC LIMIT ?`,
+          project,
+          GLOBAL_PROJECT,
+          input.since,
+          limit
+        );
+        return { entities: entities.map((e) => ({ ...e, is_new: Boolean(e.is_new) })), notes };
+      }
       dropWorklogFiles(paths) {
         this.db.transaction(() => {
           for (let i = 0; i < paths.length; i += 400) {
@@ -25212,7 +25274,9 @@ async function scanWorklog(store, input = {}) {
   const resolvers = makeResolvers(await store.projectPaths());
   const result = { scanned: 0, skipped: 0 };
   const sinceDays = input.sinceDays === void 0 ? 120 : input.sinceDays;
-  const files = listTranscripts(input.root ?? transcriptRoot(), sinceDays);
+  const files = listTranscripts(input.root ?? transcriptRoot(), sinceDays).filter(
+    (f) => !input.session || basename2(f.path) === `${input.session}.jsonl`
+  );
   const keyOf2 = (path) => prefix ? `${prefix}${path}` : path;
   if (prefix && await store.worklogSetting(SETTING_KEY)) {
     await store.dropWorklogFiles(files.map((f) => f.path));
@@ -25629,6 +25693,7 @@ var init_commands = __esm({
 var worklog_exports = {};
 __export(worklog_exports, {
   rangeFromName: () => rangeFromName,
+  sessionCommand: () => sessionCommand,
   worklogCommand: () => worklogCommand,
   worklogOptions: () => worklogOptions,
   worklogTool: () => worklogTool
@@ -25728,6 +25793,23 @@ async function worklogCommand(args) {
     else if (format === "md") console.log(renderMarkdown(report));
     else if (format === "text") console.log(renderText(report, { detail }));
     else throw new Error(`Unknown format '${format}'. Use text, md, csv or json.`);
+  } finally {
+    backend.close();
+  }
+}
+async function sessionCommand(args) {
+  const id = flag(args, "--id");
+  if (!id) throw new Error("Usage: task-runner-mcp session --id <session id> [--cwd dir]");
+  const backend = openBackend();
+  try {
+    const { store } = backend;
+    const detected = await projectFor(store, resolve2(flag(args, "--cwd") ?? process.cwd()));
+    await scanWorklog(store, { sinceDays: null, session: id, options: worklogOptions(args), deviceId: deviceInfo().id });
+    const time3 = await store.worklogSession(id);
+    const since = time3.started_at ?? Math.floor(Date.now() / 1e3) - 60;
+    const changed = await store.changedSince({ project: detected.project, since });
+    process.stdout.write(`${JSON.stringify({ project: detected.project, branch: detected.branch, location: backend.location, ...time3, ...changed })}
+`);
   } finally {
     backend.close();
   }
@@ -26486,6 +26568,7 @@ Usage: task-runner-mcp [command]
   serve                      Run the MCP server on stdio (default when piped)
   hook session-start         Print the SessionStart hook output for Claude Code
   snapshot [--cwd d] [--query q | --entity name]
+  session --id <session id> [--cwd d]          this session's time and what it saved
                              JSON view of a project's tasks, notes and graph
   worklog [--week|--today|--last-week|--month|--from D --to D] [--project k|.] [--exclude a*,b] [--format text|md|csv|json] [--detail]
                              Time per project and task: you vs the agent
@@ -26532,6 +26615,8 @@ async function main() {
     }
     case "snapshot":
       return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).snapshot(args);
+    case "session":
+      return await (await Promise.resolve().then(() => (init_worklog(), worklog_exports))).sessionCommand(args);
     case "dashboard": {
       const { dashboard: dashboard2 } = await Promise.resolve().then(() => (init_dashboard(), dashboard_exports));
       await dashboard2(args);

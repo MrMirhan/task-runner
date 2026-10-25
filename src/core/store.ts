@@ -1100,6 +1100,63 @@ export class Store {
     });
   }
 
+  /** Time and activity of one agent session, from the rows its transcript produced. */
+  worklogSession(sessionId: string) {
+    const sid = required(sessionId, "session");
+    const time = this.db.get<{ ai_s: number | null; human_s: number | null; wall_s: number | null; first: number | null; last: number | null }>(
+      `SELECT SUM(ai_s) AS ai_s, SUM(human_s) AS human_s, SUM(MIN(60, ai_s + human_s)) AS wall_s, MIN(minute) AS first, MAX(minute) AS last
+       FROM (SELECT minute,
+                    SUM(CASE WHEN kind = 'ai' THEN secs ELSE 0 END) AS ai_s,
+                    SUM(CASE WHEN kind = 'human' THEN secs ELSE 0 END) AS human_s
+             FROM worklog_minutes WHERE session_id = ? GROUP BY minute)`,
+      sid,
+    );
+    const scopes = this.db.all<{ project_key: string; branch: string; secs: number }>(
+      `SELECT project_key, branch, SUM(secs) AS secs FROM worklog_minutes WHERE session_id = ?
+       GROUP BY project_key, branch ORDER BY secs DESC`,
+      sid,
+    );
+    // Facts are kept per transcript file; a session is one file.
+    const facts = this.db.get<{ prompts: number | null; edits: number | null; first_prompt: string | null }>(
+      `SELECT SUM(prompts) AS prompts, SUM(edits) AS edits, MIN(first_prompt) AS first_prompt FROM worklog_facts
+       WHERE file IN (SELECT DISTINCT file FROM worklog_minutes WHERE session_id = ?)`,
+      sid,
+    );
+    return {
+      session: sid,
+      agent_s: time?.ai_s ?? 0,
+      you_s: time?.human_s ?? 0,
+      wall_s: time?.wall_s ?? 0,
+      started_at: time?.first == null ? null : time.first * 60,
+      last_at: time?.last == null ? null : time.last * 60 + 59,
+      prompts: facts?.prompts ?? 0,
+      edits: facts?.edits ?? 0,
+      first_prompt: facts?.first_prompt ?? null,
+      scopes,
+    };
+  }
+
+  /** What changed in a project's memory since a moment: new or extended entities and new notes. */
+  changedSince(input: { project: string; since: number; limit?: number }) {
+    const project = required(input.project, "project");
+    const limit = clamp(Math.floor(input.limit ?? 20), 1, 100);
+    const entities = this.db.all<{ name: string; entity_type: string; is_new: number; new_facts: number; at: number }>(
+      `SELECT e.name, e.entity_type, e.created_at >= ? AS is_new,
+              (SELECT COUNT(*) FROM observations o WHERE o.entity_id = e.id AND o.created_at >= ? AND o.valid_until IS NULL) AS new_facts,
+              e.updated_at AS at
+       FROM entities e
+       WHERE e.project_key IN (?, ?) AND e.valid_until IS NULL AND e.updated_at >= ?
+       ORDER BY e.updated_at DESC LIMIT ?`,
+      input.since, input.since, project, GLOBAL_PROJECT, input.since, limit,
+    );
+    const notes = this.db.all<{ id: string; type: string; title: string; created_at: number }>(
+      `SELECT id, type, title, created_at FROM entries WHERE project_key IN (?, ?) AND created_at >= ?
+       ORDER BY created_at DESC LIMIT ?`,
+      project, GLOBAL_PROJECT, input.since, limit,
+    );
+    return { entities: entities.map((e) => ({ ...e, is_new: Boolean(e.is_new) })), notes };
+  }
+
   dropWorklogFiles(paths: string[]): void {
     this.db.transaction(() => {
       for (let i = 0; i < paths.length; i += 400) {
