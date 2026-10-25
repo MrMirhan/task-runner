@@ -4,15 +4,18 @@ import type { Db, SqlValue } from "../../src/core/db.ts";
 import { RulesStore } from "../../src/core/rules.ts";
 import { Store } from "../../src/core/store.ts";
 import { bearerOf, health, isAppPath, json, routeApp, sameKey } from "../../src/http/app.ts";
+import { AdminStorage, handleAdmin, sha256Hex, type AdminEnv } from "./admin.ts";
 
-interface Env {
+export { AdminStorage };
+
+interface Env extends AdminEnv {
   STORAGE_OBJECT: DurableObjectNamespace<TaskRunnerStorage>;
   ASSETS: Fetcher;
   /** Secret: the key that unlocks the MCP endpoint, the API and the web page. */
   TASK_RUNNER_KEY?: string;
   /** Which stored data that key opens. Servers upgraded from before 1.0 set it to their old tenant id. */
   TASK_RUNNER_TENANT?: string;
-  /** Only on servers upgraded from before 1.0: the keys that were issued there keep working. */
+  /** Issued keys, and the admin page that manages them. */
   ADMIN_OBJECT?: DurableObjectNamespace<AdminStorage>;
 }
 
@@ -54,30 +57,11 @@ export class TaskRunnerStorage extends DurableObject<Env> {
   }
 }
 
-/** Before 1.0 the server issued one key per tenant. This keeps reading that table and nothing else. */
-export class AdminStorage extends DurableObject<Env> {
-  async fetch(request: Request): Promise<Response> {
-    const { hash } = (await request.json()) as { hash?: string };
-    const exists = this.ctx.storage.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'api_keys'").toArray().length > 0;
-    if (!hash || !exists) return json({ tenant_id: null });
-    const row = this.ctx.storage.sql
-      .exec("SELECT id, tenant_id FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL", hash)
-      .toArray()[0];
-    if (row) this.ctx.storage.sql.exec("UPDATE api_keys SET last_used_at = unixepoch() WHERE id = ?", row.id);
-    return json({ tenant_id: row ? String(row.tenant_id) : null });
-  }
-}
-
 /** The MCP session class from before 1.0. It is kept so its storage is not deleted; it serves nothing. */
 export class TaskRunnerMCP extends DurableObject<Env> {
   async fetch(): Promise<Response> {
     return json({ error: "Gone. Connect to /mcp." }, 410);
   }
-}
-
-async function sha256Hex(text: string): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function tenantFor(request: Request, env: Env): Promise<string | null> {
@@ -100,7 +84,25 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (!isAppPath(url.pathname)) return env.ASSETS.fetch(request);
-    if (url.pathname === "/api/health") return health();
+    if (url.pathname === "/api/health") {
+      const base = (await health().json()) as { features: string[] };
+      const admin = Boolean(env.ADMIN_OBJECT && env.ADMIN_USERNAME && env.ADMIN_PASSWORD_HASH && env.JWT_SECRET);
+      return json({ ...base, features: admin ? [...base.features, "admin"] : base.features });
+    }
+    if (url.pathname.startsWith("/api/admin/")) {
+      return handleAdmin(request, {
+        env,
+        admin: env.ADMIN_OBJECT ? env.ADMIN_OBJECT.get(env.ADMIN_OBJECT.idFromName("admin-singleton")) : null,
+        tenantTotals: async (tenant) => {
+          const res = await env.STORAGE_OBJECT.get(env.STORAGE_OBJECT.idFromName(tenant)).fetch("https://tenant/api/rpc", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target: "store", method: "totals", args: [] }),
+          });
+          return ((await res.json()) as { result?: unknown }).result ?? null;
+        },
+      });
+    }
 
     if (!env.TASK_RUNNER_KEY && !env.ADMIN_OBJECT) {
       return json({ error: "No server key. Set one with: wrangler secret put TASK_RUNNER_KEY (24 characters or more)" }, 500);

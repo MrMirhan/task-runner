@@ -5,9 +5,15 @@
   "compatibility_date": "2025-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
-    "bindings": [{ "name": "STORAGE_OBJECT", "class_name": "TaskRunnerStorage" }]
+    "bindings": [
+      { "name": "STORAGE_OBJECT", "class_name": "TaskRunnerStorage" },
+      { "name": "ADMIN_OBJECT", "class_name": "AdminStorage" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TaskRunnerStorage"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TaskRunnerStorage"] },
+    { "tag": "v2", "new_sqlite_classes": ["AdminStorage"] }
+  ],
   "assets": {
     "directory": "../dist/dashboard",
     "binding": "ASSETS",

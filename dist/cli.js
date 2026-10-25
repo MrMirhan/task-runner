@@ -39,7 +39,7 @@ var init_constants = __esm({
   "src/core/constants.ts"() {
     "use strict";
     SERVER_NAME = "task-runner";
-    SERVER_VERSION = "1.1.3";
+    SERVER_VERSION = "1.2.0";
     ENTITY_TYPES = [
       "preference",
       "decision",
@@ -24114,6 +24114,19 @@ var init_store = __esm({
         if (!row) throw new StoreError("not_found", `No preference '${id}'`);
         this.db.run("UPDATE taste SET valid_until = ?, updated_at = ? WHERE id = ?", t, t, id);
         return { forgotten: id };
+      }
+      /** Row counts for the whole database, for the admin page. */
+      totals() {
+        const n = (sql) => this.db.get(sql)?.n ?? 0;
+        return {
+          projects: n("SELECT COUNT(*) AS n FROM projects"),
+          entities: n("SELECT COUNT(*) AS n FROM entities WHERE valid_until IS NULL"),
+          facts: n("SELECT COUNT(*) AS n FROM observations WHERE valid_until IS NULL"),
+          notes: n("SELECT COUNT(*) AS n FROM entries"),
+          tasks: n("SELECT COUNT(*) AS n FROM tasks"),
+          preferences: n("SELECT COUNT(*) AS n FROM taste WHERE valid_until IS NULL"),
+          last_change: this.db.get("SELECT MAX(updated_at) AS t FROM projects")?.t ?? null
+        };
       }
       /** Time and activity of one agent session, from the rows its transcript produced. */
       worklogSession(sessionId) {

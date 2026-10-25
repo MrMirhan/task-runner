@@ -11,6 +11,11 @@ export default function HeaderActions({ onRefresh }: { onRefresh: () => void }) 
       <button type="button" onClick={onRefresh} className="btn">
         Refresh
       </button>
+      {health?.features.includes("admin") && (
+        <a href="/admin" className="btn">
+          Admin
+        </a>
+      )}
       <ThemeToggle />
       {health?.auth === "bearer" && (
         <button

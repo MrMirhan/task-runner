@@ -6,7 +6,7 @@ import { useSession } from "../lib/session";
 import ThemeToggle from "./ThemeToggle";
 
 export default function SignIn() {
-  const { signIn, notice } = useSession();
+  const { signIn, notice, health } = useSession();
   const id = useId();
   const [key, setKey] = useState("");
   const [keep, setKeep] = useState(false);
@@ -40,7 +40,7 @@ export default function SignIn() {
         <form onSubmit={submit} method="post" className="card w-full max-w-sm space-y-4 p-5">
           <div>
             <h2 className="text-base font-semibold">Sign in</h2>
-            <p className="mt-1 text-sm text-muted">Enter the server key to manage your rules.</p>
+            <p className="mt-1 text-sm text-muted">Enter your access key.</p>
           </div>
 
           {notice && (
@@ -85,6 +85,11 @@ export default function SignIn() {
           <button type="submit" disabled={busy || key.trim() === ""} className="btn btn-primary w-full justify-center">
             {busy ? "Checking…" : "Sign in"}
           </button>
+          {health?.features.includes("admin") && (
+            <p className="text-center text-sm text-muted">
+              Manage keys? <a href="/admin" className="text-link underline-offset-2 hover:underline">Admin sign in</a>
+            </p>
+          )}
         </form>
       </main>
     </div>

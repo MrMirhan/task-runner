@@ -1229,6 +1229,20 @@ export class Store {
     return { forgotten: id };
   }
 
+  /** Row counts for the whole database, for the admin page. */
+  totals() {
+    const n = (sql: string) => this.db.get<{ n: number }>(sql)?.n ?? 0;
+    return {
+      projects: n("SELECT COUNT(*) AS n FROM projects"),
+      entities: n("SELECT COUNT(*) AS n FROM entities WHERE valid_until IS NULL"),
+      facts: n("SELECT COUNT(*) AS n FROM observations WHERE valid_until IS NULL"),
+      notes: n("SELECT COUNT(*) AS n FROM entries"),
+      tasks: n("SELECT COUNT(*) AS n FROM tasks"),
+      preferences: n("SELECT COUNT(*) AS n FROM taste WHERE valid_until IS NULL"),
+      last_change: this.db.get<{ t: number | null }>("SELECT MAX(updated_at) AS t FROM projects")?.t ?? null,
+    };
+  }
+
   /** Time and activity of one agent session, from the rows its transcript produced. */
   worklogSession(sessionId: string) {
     const sid = required(sessionId, "session");
