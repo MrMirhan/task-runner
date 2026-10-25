@@ -124,6 +124,7 @@ declare module 'claude-code' {
       taste: TastePreference[] | null
       tasteMode: 'on' | 'off' | null
       tasteNote: string[]
+      autoOpened: boolean
     }
   }
 }

@@ -533,3 +533,35 @@ test('the Taste tab lists what was learned and can turn learning off', async ($,
   expect(await ui.find({ type: 'Text', text: /Learning is off in this session/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('the panel opens once when an interactive session starts and not again after a reload', async ($, on) => {
+  stubCli(on)
+  on('session.start', () => ({ cwd: '/work/acme' }))
+  const opened: string[] = []
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } as never }
+  })
+  await $.session.start({ cwd: '/work/acme', surface: null, isInteractive: false })
+  await settle()
+  expect(opened).toEqual([])
+  await $.session.start({ cwd: '/work/acme', surface: 'desktop', isInteractive: true })
+  await settle()
+  expect(opened).toEqual(['brain'])
+  await $.session.start({ cwd: '/work/acme', surface: 'desktop', isInteractive: true })
+  await settle()
+  expect(opened).toEqual(['brain'])
+})
+
+test('the setting keeps the panel closed at start', { options: { openOnStart: false } }, async ($, on) => {
+  stubCli(on)
+  on('session.start', () => ({ cwd: '/work/acme' }))
+  const opened: string[] = []
+  on('ui.open', (_, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } as never }
+  })
+  await $.session.start({ cwd: '/work/acme', surface: 'desktop', isInteractive: true })
+  await settle()
+  expect(opened).toEqual([])
+})

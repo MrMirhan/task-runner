@@ -39,7 +39,7 @@ var init_constants = __esm({
   "src/core/constants.ts"() {
     "use strict";
     SERVER_NAME = "task-runner";
-    SERVER_VERSION = "1.1.0";
+    SERVER_VERSION = "1.1.1";
     ENTITY_TYPES = [
       "preference",
       "decision",

@@ -19,6 +19,8 @@ const tasteValue = atom({ plugin: 'task-runner', key: 'taste' } as const, null)
 const tasteModeValue = atom({ plugin: 'task-runner', key: 'tasteMode' } as const, null)
 // Preferences learned since the last prompt, told to the agent with the next one.
 const tasteNoteValue = atom({ plugin: 'task-runner', key: 'tasteNote' } as const, [])
+// Set once the panel was opened at the start of this session, so a reload does not open it again after a close.
+const autoOpenedValue = atom({ plugin: 'task-runner', key: 'autoOpened' } as const, false)
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'session', label: 'Session' },
@@ -467,6 +469,7 @@ export const register: Register = (on, options) => {
   const wantsCommitNotes = options.commitNotes !== false
   const wantsApproval = options.approve !== false
   const tasteByDefault = options.taste !== false
+  const wantsAutoOpen = options.openOnStart !== false
   // The person's messages of the running turn that look like they carry a preference.
   let tasteCandidates: string[] = []
 
@@ -476,6 +479,11 @@ export const register: Register = (on, options) => {
   let pendingNudge: string | null = null
 
   on('session.start', async ($, e, next) => {
+    if (wantsAutoOpen && e.isInteractive && !(await read($, autoOpenedValue))) {
+      await update($, autoOpenedValue, () => true)
+      // No focus: the prompt keeps the keys; the person closes or moves the pane as any other.
+      background($.ui.open({ id: PANE, title: TITLE }))
+    }
     background(refresh($))
     background(loadSession($, true))
     background(loadTaste($))
