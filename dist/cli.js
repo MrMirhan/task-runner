@@ -2014,10 +2014,10 @@ var init_schemas = __esm({
         const shape = def.shape;
         const propValues = {};
         for (const key in shape) {
-          const field = shape[key]._zod;
-          if (field.values) {
+          const field2 = shape[key]._zod;
+          if (field2.values) {
             propValues[key] ?? (propValues[key] = /* @__PURE__ */ new Set());
-            for (const v of field.values)
+            for (const v of field2.values)
               propValues[key].add(v);
           }
         }
@@ -6407,12 +6407,12 @@ var init_stdio2 = __esm({
         this.onclose?.();
       }
       send(message) {
-        return new Promise((resolve4) => {
+        return new Promise((resolve5) => {
           const json = serializeMessage(message);
           if (this._stdout.write(json)) {
-            resolve4();
+            resolve5();
           } else {
-            this._stdout.once("drain", resolve4);
+            this._stdout.once("drain", resolve5);
           }
         });
       }
@@ -12933,7 +12933,7 @@ var init_protocol = __esm({
               return;
             }
             const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-            await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+            await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
             options?.signal?.throwIfAborted();
           }
         } catch (error2) {
@@ -12950,7 +12950,7 @@ var init_protocol = __esm({
        */
       request(request, resultSchema, options) {
         const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-        return new Promise((resolve4, reject) => {
+        return new Promise((resolve5, reject) => {
           const earlyReject = (error2) => {
             reject(error2);
           };
@@ -13028,7 +13028,7 @@ var init_protocol = __esm({
               if (!parseResult.success) {
                 reject(parseResult.error);
               } else {
-                resolve4(parseResult.data);
+                resolve5(parseResult.data);
               }
             } catch (error2) {
               reject(error2);
@@ -13289,12 +13289,12 @@ var init_protocol = __esm({
           }
         } catch {
         }
-        return new Promise((resolve4, reject) => {
+        return new Promise((resolve5, reject) => {
           if (signal.aborted) {
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
             return;
           }
-          const timeoutId = setTimeout(resolve4, interval);
+          const timeoutId = setTimeout(resolve5, interval);
           signal.addEventListener("abort", () => {
             clearTimeout(timeoutId);
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -16321,7 +16321,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve4.call(this, root, ref);
+      let _sch = resolve5.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -16348,7 +16348,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve4(root, ref) {
+    function resolve5(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -16923,7 +16923,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve4(baseURI, relativeURI, options) {
+    function resolve5(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -17150,7 +17150,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve4,
+      resolve: resolve5,
       resolveComponent,
       equal,
       serialize,
@@ -20866,9 +20866,9 @@ function promptArgumentsFromSchema(schema) {
   const shape = getObjectShape(schema);
   if (!shape)
     return [];
-  return Object.entries(shape).map(([name, field]) => {
-    const description = getSchemaDescription(field);
-    const isOptional = isSchemaOptional(field);
+  return Object.entries(shape).map(([name, field2]) => {
+    const description = getSchemaDescription(field2);
+    const isOptional = isSchemaOptional(field2);
     return {
       name,
       description,
@@ -21132,7 +21132,7 @@ var init_mcp = __esm({
         let task = createTaskResult.task;
         const pollInterval = task.pollInterval ?? 5e3;
         while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-          await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
+          await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
           const updatedTask = await extra.taskStore.getTask(taskId);
           if (!updatedTask) {
             throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -21175,11 +21175,11 @@ var init_mcp = __esm({
           return EMPTY_COMPLETION_RESULT;
         }
         const promptShape = getObjectShape(prompt.argsSchema);
-        const field = promptShape?.[request.params.argument.name];
-        if (!isCompletable(field)) {
+        const field2 = promptShape?.[request.params.argument.name];
+        if (!isCompletable(field2)) {
           return EMPTY_COMPLETION_RESULT;
         }
-        const completer = getCompleter(field);
+        const completer = getCompleter(field2);
         if (!completer) {
           return EMPTY_COMPLETION_RESULT;
         }
@@ -21452,8 +21452,8 @@ var init_mcp = __esm({
         };
         this._registeredPrompts[name] = registeredPrompt;
         if (argsSchema) {
-          const hasCompletable = Object.values(argsSchema).some((field) => {
-            const inner = field instanceof ZodOptional2 ? field._def?.innerType : field;
+          const hasCompletable = Object.values(argsSchema).some((field2) => {
+            const inner = field2 instanceof ZodOptional2 ? field2._def?.innerType : field2;
             return isCompletable(inner);
           });
           if (hasCompletable) {
@@ -21635,15 +21635,15 @@ var init_mcp = __esm({
 });
 
 // src/core/errors.ts
-function assertIn(value, allowed, field) {
+function assertIn(value, allowed, field2) {
   if (!allowed.includes(value)) {
-    throw new StoreError("invalid", `${field} must be one of: ${allowed.join(", ")}`);
+    throw new StoreError("invalid", `${field2} must be one of: ${allowed.join(", ")}`);
   }
   return value;
 }
-function required2(value, field) {
+function required2(value, field2) {
   if (typeof value !== "string" || value.trim() === "") {
-    throw new StoreError("invalid", `${field} is required`);
+    throw new StoreError("invalid", `${field2} is required`);
   }
   return value;
 }
@@ -22018,6 +22018,33 @@ function registerTools(server, ctx) {
       };
     })
   );
+  if (ctx.worklog) {
+    const worklog = ctx.worklog;
+    server.registerTool(
+      "worklog",
+      {
+        title: "Time report",
+        description: "How long the user and the agent worked, per project and task (a branch or ticket), for a period. Read from the session transcripts. Use it to answer 'how much time did I spend on X this week' or 'what did I do this week'. Agent time adds up across parallel sessions; wall time counts each minute once.",
+        inputSchema: {
+          range: external_exports.enum(["today", "yesterday", "week", "last-week", "month", "custom"]).optional().describe("Default week (Monday to Sunday)"),
+          from: external_exports.string().optional().describe("YYYY-MM-DD, with range custom"),
+          to: external_exports.string().optional().describe("YYYY-MM-DD, with range custom"),
+          project: external_exports.string().optional().describe("A project key, or 'current'. Default: every project"),
+          detail: external_exports.boolean().optional().describe("Include what was asked and the notes and commits per task")
+        },
+        annotations: READ
+      },
+      ({ range, from, to, project, detail }) => run(
+        () => worklog({
+          range: range ?? "week",
+          from,
+          to,
+          project: project === "current" ? session.get().project : project ?? null,
+          detail
+        })
+      )
+    );
+  }
   server.registerTool(
     "create_task_group",
     {
@@ -22187,6 +22214,566 @@ var init_session = __esm({
         return this.detect ? this.detect() : null;
       }
     };
+  }
+});
+
+// src/worklog/compute.ts
+function localDay(epochSeconds) {
+  const d = new Date(epochSeconds * 1e3);
+  const pad2 = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function normalizeBranch(branch) {
+  return branch && branch !== "HEAD" ? branch : NO_BRANCH;
+}
+function computeWorklog(events, resolvers, options = DEFAULT_OPTIONS) {
+  const sorted = [...events].sort((a, b) => a.t - b.t);
+  const minutes = /* @__PURE__ */ new Map();
+  const facts = /* @__PURE__ */ new Map();
+  const focusAt = [];
+  let focus = null;
+  for (const e of sorted) {
+    for (const file of e.paths ?? []) focus = resolvers.path(file) ?? focus;
+    focusAt.push(focus);
+  }
+  const firstFocus = focusAt.find((f) => f !== null) ?? null;
+  const index = new Map(sorted.map((e, i) => [e, i]));
+  const scopeOf = (e) => {
+    const here = resolvers.cwd(e.cwd);
+    if (here.isRepo) return { project: here.project, branch: normalizeBranch(e.branch) };
+    const followed = focusAt[index.get(e) ?? 0] ?? firstFocus;
+    return { project: followed ?? here.project, branch: followed ? NO_BRANCH : normalizeBranch(e.branch) };
+  };
+  const addSeconds = (end, seconds, kind, scope, sessionId) => {
+    let from = end - seconds;
+    while (from < end - 0.5) {
+      const minute = Math.floor(from / 60);
+      const next = Math.min(end, (minute + 1) * 60);
+      const secs = Math.round(next - from);
+      if (secs > 0) {
+        const key = `${minute}|${kind}|${scope.project}|${scope.branch}`;
+        const row = minutes.get(key);
+        if (row) row.secs += secs;
+        else minutes.set(key, { sessionId, minute, kind, ...scope, secs });
+      }
+      from = next;
+    }
+  };
+  const fact2 = (e) => {
+    const scope = scopeOf(e);
+    const day4 = localDay(e.t);
+    const key = `${day4}|${scope.project}|${scope.branch}`;
+    let row = facts.get(key);
+    if (!row) {
+      row = { day: day4, ...scope, prompts: 0, edits: 0, firstPrompt: null };
+      facts.set(key, row);
+    }
+    return row;
+  };
+  for (let i = 0; i < sorted.length; i++) {
+    const current = sorted[i];
+    if (current.kind === "prompt") {
+      const row = fact2(current);
+      row.prompts += 1;
+      if (!row.firstPrompt && current.text) row.firstPrompt = current.text;
+    }
+    if (current.edits) fact2(current).edits += current.edits;
+    if (i === 0) continue;
+    const previous = sorted[i - 1];
+    const gap = current.t - previous.t;
+    if (gap <= 0) continue;
+    if (current.kind === "system") continue;
+    if (current.kind === "prompt") {
+      addSeconds(current.t, Math.min(gap, options.humanCapSeconds), "human", scopeOf(previous), current.sessionId);
+    } else {
+      addSeconds(current.t, Math.min(gap, options.aiCapSeconds), "ai", scopeOf(current), current.sessionId);
+    }
+  }
+  return { minutes: [...minutes.values()], facts: [...facts.values()] };
+}
+function taskInfo(branch) {
+  if (branch === NO_BRANCH || branch === "main" || branch === "master" || branch === "develop") {
+    return { label: branch === NO_BRANCH ? "(no branch)" : branch, kind: "other" };
+  }
+  const ticket = TICKET.exec(branch)?.[1];
+  const head = branch.split("/")[0].toLowerCase();
+  const kind = /^(feat|feature)$/.test(head) ? "feature" : /^(fix|bugfix|hotfix)$/.test(head) ? "fix" : /^(chore|refactor|docs|test|ci|build|perf|style)$/.test(head) ? "chore" : "other";
+  return { label: ticket ? ticket.toUpperCase() : branch, kind };
+}
+var DEFAULT_OPTIONS, NO_BRANCH, TICKET;
+var init_compute = __esm({
+  "src/worklog/compute.ts"() {
+    "use strict";
+    DEFAULT_OPTIONS = { humanCapSeconds: 5 * 60, aiCapSeconds: 15 * 60 };
+    NO_BRANCH = "(none)";
+    TICKET = /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]*-\d+)(?:[^A-Za-z0-9]|$)/;
+  }
+});
+
+// src/worklog/report.ts
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function parseDay(text2) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text2);
+  if (!m) throw new Error(`Invalid date '${text2}'. Use YYYY-MM-DD.`);
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+function resolveRange(flags, now = /* @__PURE__ */ new Date()) {
+  const today = startOfDay(now);
+  const secs = (d) => Math.floor(d.getTime() / 1e3);
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  if (flags.from || flags.to) {
+    const from = flags.from ? parseDay(flags.from) : /* @__PURE__ */ new Date(0);
+    const to = addDays(flags.to ? parseDay(flags.to) : today, 1);
+    return { from: secs(from), to: secs(to), label: `${flags.from ?? "start"} to ${flags.to ?? iso(today)}` };
+  }
+  if (flags.today) return { from: secs(today), to: secs(addDays(today, 1)), label: `Today ${iso(today)}` };
+  if (flags.yesterday) {
+    const y = addDays(today, -1);
+    return { from: secs(y), to: secs(today), label: `Yesterday ${iso(y)}` };
+  }
+  if (flags.days) {
+    const from = addDays(today, -(flags.days - 1));
+    return { from: secs(from), to: secs(addDays(today, 1)), label: `Last ${flags.days} days` };
+  }
+  if (flags.month) {
+    const first = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { from: secs(first), to: secs(new Date(today.getFullYear(), today.getMonth() + 1, 1)), label: `Month ${iso(first).slice(0, 7)}` };
+  }
+  const monday = addDays(today, -((today.getDay() + 6) % 7));
+  const start = flags.lastWeek ? addDays(monday, -7) : monday;
+  const end = addDays(start, 7);
+  return { from: secs(start), to: secs(end), label: `${flags.lastWeek ? "Last week" : "Week"} ${iso(start)} to ${iso(addDays(end, -1))}` };
+}
+function buildReport(store, input) {
+  const { perDay, facts, wall_s } = store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
+  const byTask = /* @__PURE__ */ new Map();
+  const rowFor = (project, branch) => {
+    const info = taskInfo(branch);
+    const key = `${project}\0${info.label}`;
+    let row = byTask.get(key);
+    if (!row) {
+      row = { ...info, project, branches: [], you_s: 0, agent_s: 0, wall_s: 0, prompts: 0, edits: 0, days: [], first_prompt: null };
+      byTask.set(key, row);
+    }
+    if (!row.branches.includes(branch)) row.branches.push(branch);
+    return row;
+  };
+  const days = /* @__PURE__ */ new Map();
+  for (const r of perDay) {
+    const row = rowFor(r.project_key, r.branch);
+    row.you_s += r.human_s;
+    row.agent_s += r.ai_s;
+    row.wall_s += r.wall_s;
+    if (!row.days.includes(r.day)) row.days.push(r.day);
+    const d = days.get(r.day) ?? { day: r.day, you_s: 0, agent_s: 0, wall_s: 0 };
+    d.you_s += r.human_s;
+    d.agent_s += r.ai_s;
+    d.wall_s += r.wall_s;
+    days.set(r.day, d);
+  }
+  for (const f of facts) {
+    const row = rowFor(f.project_key, f.branch);
+    row.prompts += f.prompts;
+    row.edits += f.edits;
+    if (!row.first_prompt && f.first_prompt) row.first_prompt = f.first_prompt;
+  }
+  const rows = [...byTask.values()].filter((r) => r.you_s + r.agent_s > 0 || r.prompts > 0).sort((a, b) => b.you_s + b.agent_s - (a.you_s + a.agent_s));
+  if (input.detail) {
+    for (const row of rows.slice(0, input.detailLimit ?? 15)) {
+      const notes = [];
+      const groups = [];
+      for (const branch of row.branches) {
+        const found = store.worklogActivity(row.project, branch, input.range.from, input.range.to);
+        for (const n of found.notes) notes.push({ type: n.type, title: n.title, at: new Date(n.created_at * 1e3).toISOString().slice(0, 10) });
+        for (const g of found.groups) groups.push({ name: g.task_group, done: g.completed, total: g.total });
+      }
+      row.notes = notes;
+      row.task_groups = groups;
+    }
+  }
+  return {
+    range: input.range,
+    rows,
+    days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)),
+    totals: {
+      you_s: rows.reduce((n, r) => n + r.you_s, 0),
+      agent_s: rows.reduce((n, r) => n + r.agent_s, 0),
+      wall_s,
+      projects: new Set(rows.map((r) => r.project)).size,
+      tasks: rows.length,
+      prompts: rows.reduce((n, r) => n + r.prompts, 0),
+      edits: rows.reduce((n, r) => n + r.edits, 0)
+    }
+  };
+}
+function formatDuration(seconds) {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 1) return seconds > 0 ? "<1m" : "0m";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+}
+function renderText(report, options = {}) {
+  const { totals: t } = report;
+  const lines = [
+    report.range.label,
+    `You ${formatDuration(t.you_s)} \xB7 agent ${formatDuration(t.agent_s)} \xB7 wall clock ${formatDuration(t.wall_s)} \xB7 ${t.tasks} tasks in ${t.projects} projects`,
+    "(agent time adds up across parallel sessions; wall clock counts each minute once)",
+    ""
+  ];
+  if (report.rows.length === 0) return [...lines, "No activity in this range."].join("\n");
+  lines.push(`${pad("PROJECT", 24)} ${pad("TASK", 26)} ${pad("KIND", 8)} ${pad("YOU", 8, true)} ${pad("AGENT", 8, true)} ${pad("WALL", 8, true)} ${pad("PROMPTS", 7, true)} ${pad("EDITS", 5, true)}`);
+  for (const r of report.rows) {
+    lines.push(
+      `${pad(r.project, 24)} ${pad(r.label, 26)} ${pad(r.kind, 8)} ${pad(formatDuration(r.you_s), 8, true)} ${pad(formatDuration(r.agent_s), 8, true)} ${pad(formatDuration(r.wall_s), 8, true)} ${pad(String(r.prompts), 7, true)} ${pad(String(r.edits), 5, true)}`
+    );
+    if (options.detail) {
+      if (r.first_prompt) lines.push(`    asked: ${r.first_prompt}`);
+      for (const g of r.task_groups ?? []) lines.push(`    tasks: ${g.name} ${g.done}/${g.total}`);
+      for (const n of r.notes ?? []) lines.push(`    ${n.at} [${n.type}] ${n.title}`);
+    }
+  }
+  return lines.join("\n");
+}
+function renderMarkdown(report) {
+  const { totals: t } = report;
+  const out = [
+    `# Worklog: ${report.range.label}`,
+    "",
+    `- You: **${formatDuration(t.you_s)}**`,
+    `- Agent: **${formatDuration(t.agent_s)}** (adds up across parallel sessions)`,
+    `- Wall clock: **${formatDuration(t.wall_s)}**`,
+    `- ${t.tasks} tasks in ${t.projects} projects, ${t.prompts} prompts, ${t.edits} file edits`,
+    ""
+  ];
+  const projects = [...new Set(report.rows.map((r) => r.project))];
+  for (const project of projects) {
+    const rows = report.rows.filter((r) => r.project === project);
+    out.push(`## ${project}`, "");
+    for (const r of rows) {
+      out.push(`### ${r.label} (${r.kind})`, "", `You ${formatDuration(r.you_s)} \xB7 agent ${formatDuration(r.agent_s)} \xB7 wall ${formatDuration(r.wall_s)} \xB7 ${r.days.join(", ")}`, "");
+      if (r.first_prompt) out.push(`Started from: "${r.first_prompt}"`, "");
+      for (const g of r.task_groups ?? []) out.push(`- Task group \`${g.name}\`: ${g.done}/${g.total} done`);
+      for (const n of r.notes ?? []) out.push(`- ${n.at} [${n.type}] ${n.title}`);
+      if ((r.notes?.length ?? 0) + (r.task_groups?.length ?? 0) > 0) out.push("");
+    }
+  }
+  return out.join("\n");
+}
+function renderCsv(store, input) {
+  const { perDay } = store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
+  const lines = ["day,project,task,kind,branch,you_minutes,agent_minutes,wall_minutes,you_hours,agent_hours"];
+  for (const r of perDay) {
+    const info = taskInfo(r.branch);
+    const hours = (s) => (s / 3600).toFixed(2);
+    lines.push(
+      [r.day, r.project_key, info.label, info.kind, r.branch, Math.round(r.human_s / 60), Math.round(r.ai_s / 60), Math.round(r.wall_s / 60), hours(r.human_s), hours(r.ai_s)].map(csvCell).join(",")
+    );
+  }
+  return lines.join("\n");
+}
+var iso, pad, csvCell;
+var init_report = __esm({
+  "src/worklog/report.ts"() {
+    "use strict";
+    init_compute();
+    iso = (d) => {
+      const pad2 = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    };
+    pad = (text2, width, right = false) => right ? text2.padStart(width) : text2.length > width ? `${text2.slice(0, width - 1)}\u2026` : text2.padEnd(width);
+    csvCell = (value) => {
+      const text2 = String(value ?? "");
+      return /[",\n]/.test(text2) ? `"${text2.replace(/"/g, '""')}"` : text2;
+    };
+  }
+});
+
+// src/node/project.ts
+import { execFileSync } from "node:child_process";
+import { readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+function git(cwd, ...args) {
+  try {
+    const out = execFileSync("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      timeout: 2e3,
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+function keyFromRemote(url) {
+  const parts = url.trim().replace(/\.git$/, "").split(/[/:]+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`.toLowerCase();
+}
+function pinnedProject(root) {
+  try {
+    const parsed = JSON.parse(readFileSync(join(root, ".task-runner.json"), "utf8"));
+    return typeof parsed.project === "string" && parsed.project.trim() ? parsed.project.trim() : null;
+  } catch {
+    return null;
+  }
+}
+function detectProject(cwd, lookupByPath, env = process.env) {
+  let real = cwd;
+  try {
+    real = realpathSync(cwd);
+  } catch {
+  }
+  const top = git(real, "rev-parse", "--show-toplevel");
+  const root = top ?? real;
+  const branch = git(real, "branch", "--show-current");
+  const remote = git(real, "remote", "get-url", "origin");
+  const common = git(real, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  const mainRoot = common && basename(common) === ".git" ? dirname(common) : root;
+  const project = env.TASK_RUNNER_PROJECT || pinnedProject(root) || lookupByPath?.(root) || (mainRoot !== root ? lookupByPath?.(mainRoot) : null) || (remote ? keyFromRemote(remote) : null) || basename(root);
+  return { project, project_path: root, branch, is_repo: top !== null };
+}
+var init_project = __esm({
+  "src/node/project.ts"() {
+    "use strict";
+  }
+});
+
+// src/worklog/scan.ts
+import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename as basename2, dirname as dirname2, join as join2 } from "node:path";
+function transcriptRoot(env = process.env) {
+  return join2(env.CLAUDE_CONFIG_DIR || join2(homedir(), ".claude"), "projects");
+}
+function listTranscripts(root, sinceDays) {
+  const cutoff = sinceDays === null ? 0 : Date.now() / 1e3 - sinceDays * 86400;
+  const out = [];
+  let dirs = [];
+  try {
+    dirs = readdirSync(root);
+  } catch {
+    return out;
+  }
+  for (const dir of dirs) {
+    let names = [];
+    try {
+      names = readdirSync(join2(root, dir));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.endsWith(".jsonl")) continue;
+      const path = join2(root, dir, name);
+      try {
+        const st = statSync(path);
+        if (!st.isFile() || st.mtimeMs / 1e3 < cutoff) continue;
+        out.push({ path, size: st.size, mtime: Math.floor(st.mtimeMs / 1e3) });
+      } catch {
+      }
+    }
+  }
+  return out;
+}
+function parseToolResult(line2) {
+  if (line2.includes('"isSidechain":true')) return null;
+  const stamp = field(line2, "timestamp");
+  const t = stamp ? Date.parse(stamp) / 1e3 : NaN;
+  if (!Number.isFinite(t)) return null;
+  return { t, kind: "tool_result", cwd: field(line2, "cwd"), branch: field(line2, "gitBranch"), sessionId: field(line2, "sessionId") ?? "unknown" };
+}
+function parseLine(line2) {
+  if (line2.includes('"type":"tool_result"') && line2.includes('"type":"user"')) return parseToolResult(line2);
+  if (!line2.includes('"type":"user"') && !line2.includes('"type":"assistant"')) return null;
+  let d;
+  try {
+    d = JSON.parse(line2);
+  } catch {
+    return null;
+  }
+  if (d.isSidechain || d.type !== "user" && d.type !== "assistant" || typeof d.timestamp !== "string") return null;
+  const t = Date.parse(d.timestamp) / 1e3;
+  if (!Number.isFinite(t)) return null;
+  const base = {
+    t,
+    cwd: typeof d.cwd === "string" ? d.cwd : null,
+    branch: typeof d.gitBranch === "string" ? d.gitBranch : null,
+    sessionId: typeof d.sessionId === "string" ? d.sessionId : "unknown"
+  };
+  const content = d.message?.content;
+  if (d.type === "assistant") {
+    const uses = Array.isArray(content) ? content.filter((c) => c?.type === "tool_use") : [];
+    const edits = uses.filter((c) => EDIT_TOOLS.has(c.name)).length;
+    const paths = uses.filter((c) => FILE_TOOLS.has(c.name)).map((c) => c.input?.file_path ?? c.input?.notebook_path).filter((p) => typeof p === "string" && p.startsWith("/"));
+    return { ...base, kind: "assistant", edits, ...paths.length ? { paths } : {} };
+  }
+  if (Array.isArray(content) && content.some((c) => c?.type === "tool_result")) {
+    return { ...base, kind: "tool_result" };
+  }
+  const text2 = typeof content === "string" ? content : Array.isArray(content) ? content.filter((c) => c?.type === "text").map((c) => c.text ?? "").join(" ") : "";
+  const isHuman = d.origin?.kind === "human" && !d.isMeta && text2.trim() !== "" && !text2.trimStart().startsWith("<");
+  return isHuman ? { ...base, kind: "prompt", text: clipText(text2, 160) } : { ...base, kind: "system" };
+}
+async function* bufferLines(path) {
+  let parts = [];
+  for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 })) {
+    let start = 0;
+    for (; ; ) {
+      const nl = chunk.indexOf(10, start);
+      if (nl === -1) {
+        parts.push(chunk.subarray(start));
+        break;
+      }
+      parts.push(chunk.subarray(start, nl));
+      yield parts.length === 1 ? parts[0] : Buffer.concat(parts);
+      parts = [];
+      start = nl + 1;
+    }
+  }
+  if (parts.length > 0) yield Buffer.concat(parts);
+}
+function parseBuffer(line2) {
+  if (line2.length <= LARGE_LINE) return parseLine(line2.toString("utf8"));
+  const head = line2.toString("utf8", 0, 800);
+  if (head.includes('"type":"assistant"')) return parseLine(line2.toString("utf8"));
+  if (!head.includes('"type":"user"')) return null;
+  const tail = line2.toString("utf8", line2.length - 2e3);
+  const both = `${head} ${tail}`;
+  if (head.includes('"type":"tool_result"')) return parseToolResult(both);
+  const envelope = parseToolResult(both);
+  if (!envelope) return null;
+  return both.includes('"origin":{"kind":"human"}') ? { ...envelope, kind: "prompt", text: "(attachment)" } : { ...envelope, kind: "system" };
+}
+async function readEvents(path) {
+  const events = [];
+  for await (const line2 of bufferLines(path)) {
+    const event = parseBuffer(line2);
+    if (event) events.push(event);
+  }
+  return events;
+}
+function existingAncestor(path) {
+  let dir = path;
+  for (let i = 0; i < 40; i++) {
+    if (existsSync(dir)) return dir;
+    const parent = dirname2(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+function makeResolvers(store) {
+  const byCwd = /* @__PURE__ */ new Map();
+  const byDir = /* @__PURE__ */ new Map();
+  const roots = [];
+  const detect = (dir) => detectProject(dir, (p) => store.findProjectByPath(p), {});
+  const fromMissing = (cwd) => {
+    const known = store.findProjectByPath(cwd);
+    if (known) return { project: known, isRepo: true };
+    const orca = /\/orca\/workspaces\/([^/]+)\/[^/]+/.exec(cwd);
+    if (orca) {
+      const prefix = `${cwd.slice(0, (orca.index ?? 0) + orca[0].lastIndexOf("/"))}/`;
+      return { project: store.findProjectByPathPrefix(prefix) ?? orca[1], isRepo: true };
+    }
+    if (SCRATCH.test(cwd)) return { project: "(scratch)", isRepo: false };
+    const ancestor = existingAncestor(cwd);
+    if (ancestor) {
+      const found = detect(ancestor);
+      if (found.is_repo) return { project: found.project, isRepo: true };
+    }
+    return { project: basename2(cwd), isRepo: false };
+  };
+  return {
+    cwd(cwd) {
+      if (!cwd) return { project: "(unknown)", isRepo: false };
+      let hit = byCwd.get(cwd);
+      if (!hit) {
+        if (existsSync(cwd)) {
+          const found = detect(cwd);
+          hit = SCRATCH.test(cwd) && !found.is_repo ? { project: "(scratch)", isRepo: false } : { project: found.project, isRepo: found.is_repo };
+        } else {
+          hit = fromMissing(cwd);
+        }
+        byCwd.set(cwd, hit);
+      }
+      return hit;
+    },
+    path(file) {
+      const dir = dirname2(file);
+      if (byDir.has(dir)) return byDir.get(dir) ?? null;
+      const known = roots.find((r) => file.startsWith(`${r.root}/`));
+      if (known) {
+        byDir.set(dir, known.project);
+        return known.project;
+      }
+      const ancestor = existingAncestor(dir);
+      let project = null;
+      if (ancestor) {
+        const found = detect(ancestor);
+        if (found.is_repo && !SCRATCH.test(found.project_path)) {
+          project = found.project;
+          roots.push({ root: found.project_path, project });
+        }
+      } else {
+        const missing = fromMissing(dir);
+        if (missing.isRepo) project = missing.project;
+      }
+      byDir.set(dir, project);
+      return project;
+    }
+  };
+}
+async function scanWorklog(store, input = {}) {
+  const options = input.options ?? DEFAULT_OPTIONS;
+  const signature = `${options.humanCapSeconds}:${options.aiCapSeconds}:1`;
+  if (store.worklogSetting(SETTING_KEY) !== signature) {
+    store.clearWorklog();
+    store.setWorklogSetting(SETTING_KEY, signature);
+  }
+  const resolvers = makeResolvers(store);
+  const result = { scanned: 0, skipped: 0 };
+  const sinceDays = input.sinceDays === void 0 ? 120 : input.sinceDays;
+  for (const file of listTranscripts(input.root ?? transcriptRoot(), sinceDays)) {
+    const known = store.worklogFileState(file.path);
+    if (known && known.size === file.size && known.mtime === file.mtime) {
+      result.skipped++;
+      continue;
+    }
+    input.onFile?.(file.path);
+    const events = await readEvents(file.path);
+    const { minutes, facts } = computeWorklog(events, resolvers, options);
+    store.replaceWorklogFile(file.path, file.size, file.mtime, minutes, facts);
+    result.scanned++;
+  }
+  return result;
+}
+var EDIT_TOOLS, FILE_TOOLS, SETTING_KEY, clipText, FIELD, field, LARGE_LINE, SCRATCH;
+var init_scan = __esm({
+  "src/worklog/scan.ts"() {
+    "use strict";
+    init_project();
+    init_compute();
+    EDIT_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+    FILE_TOOLS = /* @__PURE__ */ new Set([...EDIT_TOOLS, "Read"]);
+    SETTING_KEY = "worklog_options";
+    clipText = (text2, max) => {
+      const flat = text2.replace(/\s+/g, " ").trim();
+      return flat.length > max ? `${flat.slice(0, max - 1)}\u2026` : flat;
+    };
+    FIELD = /* @__PURE__ */ new Map();
+    field = (line2, name) => {
+      let re = FIELD.get(name);
+      if (!re) {
+        re = new RegExp(`"${name}":"([^"\\\\]*)"`);
+        FIELD.set(name, re);
+      }
+      const m = re.exec(line2);
+      return m ? m[1] : null;
+    };
+    LARGE_LINE = 64 * 1024;
+    SCRATCH = /\/scratchpad(\/|$)|\/tmp\/claude-|Application Support\/Claude|\/private\/tmp\//;
   }
 });
 
@@ -22430,6 +23017,47 @@ var init_schema = __esm({
       INSERT OR IGNORE INTO project_paths (path, project_key, seen_at)
         SELECT project_path, key, updated_at FROM projects WHERE project_path IS NOT NULL;
     `);
+      },
+      (db) => {
+        db.exec(`
+      CREATE TABLE worklog_files (
+        path TEXT PRIMARY KEY,
+        size INTEGER NOT NULL,
+        mtime INTEGER NOT NULL
+      );
+
+      CREATE TABLE worklog_minutes (
+        file TEXT NOT NULL REFERENCES worklog_files(path) ON DELETE CASCADE,
+        session_id TEXT NOT NULL,
+        minute INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        project_key TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        secs INTEGER NOT NULL,
+        PRIMARY KEY (file, minute, kind, project_key, branch)
+      );
+      CREATE INDEX idx_worklog_minutes_range ON worklog_minutes(minute, project_key, branch);
+
+      CREATE TABLE worklog_facts (
+        file TEXT NOT NULL REFERENCES worklog_files(path) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        project_key TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        prompts INTEGER NOT NULL,
+        edits INTEGER NOT NULL,
+        first_prompt TEXT,
+        PRIMARY KEY (file, day, project_key, branch)
+      );
+
+      CREATE TABLE worklog_exports (
+        project_key TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        target TEXT NOT NULL,
+        through_minute INTEGER NOT NULL,
+        exported_at INTEGER NOT NULL,
+        PRIMARY KEY (project_key, branch, target)
+      );
+    `);
       }
     ];
     SCHEMA_VERSION = migrations.length;
@@ -22440,6 +23068,11 @@ var init_schema = __esm({
 function newId(prefix) {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return `${prefix}_${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+function localDayOf(epochSeconds) {
+  const d = new Date(epochSeconds * 1e3);
+  const pad2 = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 function clamp(n, min, max) {
   return Math.min(Math.max(n, min), max);
@@ -22546,6 +23179,13 @@ var init_store = __esm({
           path
         );
         return row?.key ?? null;
+      }
+      findProjectByPathPrefix(prefix) {
+        const escaped = prefix.replace(/[\\%_]/g, "\\$&");
+        return this.db.get(
+          "SELECT project_key AS key FROM project_paths WHERE path LIKE ? ESCAPE '\\' ORDER BY seen_at DESC LIMIT 1",
+          `${escaped}%`
+        )?.key ?? null;
       }
       listProjects() {
         return this.db.all("SELECT key, project_path, project_name, created_at, updated_at FROM projects ORDER BY updated_at DESC");
@@ -23330,10 +23970,167 @@ var init_store = __esm({
         }
         return { cleared: before?.n ?? 0, task_group: input.task_group ?? null };
       }
+      // ─── Worklog ───────────────────────────────────────────
+      worklogFileState(path) {
+        return this.db.get("SELECT size, mtime FROM worklog_files WHERE path = ?", path) ?? null;
+      }
+      worklogSetting(key) {
+        return this.db.get("SELECT value FROM schema_meta WHERE key = ?", key)?.value ?? null;
+      }
+      setWorklogSetting(key, value) {
+        this.db.run(
+          "INSERT INTO schema_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+          key,
+          value
+        );
+      }
+      clearWorklog() {
+        this.db.transaction(() => {
+          this.db.run("DELETE FROM worklog_minutes");
+          this.db.run("DELETE FROM worklog_facts");
+          this.db.run("DELETE FROM worklog_files");
+        });
+      }
+      replaceWorklogFile(path, size, mtime, minutes, facts) {
+        this.db.transaction(() => {
+          this.db.run("DELETE FROM worklog_files WHERE path = ?", path);
+          this.db.run("INSERT INTO worklog_files (path, size, mtime) VALUES (?, ?, ?)", path, size, mtime);
+          for (const m of minutes) {
+            this.db.run(
+              `INSERT INTO worklog_minutes (file, session_id, minute, kind, project_key, branch, secs)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(file, minute, kind, project_key, branch) DO UPDATE SET secs = secs + excluded.secs`,
+              path,
+              m.sessionId,
+              m.minute,
+              m.kind,
+              m.project,
+              m.branch,
+              m.secs
+            );
+          }
+          for (const f of facts) {
+            this.db.run(
+              `INSERT INTO worklog_facts (file, day, project_key, branch, prompts, edits, first_prompt)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              path,
+              f.day,
+              f.project,
+              f.branch,
+              f.prompts,
+              f.edits,
+              f.firstPrompt
+            );
+          }
+        });
+      }
+      /** Time per project and branch inside [from, to) (epoch seconds), by day. */
+      worklogRows(input) {
+        const values = [Math.floor(input.from / 60), Math.floor(input.to / 60)];
+        let projectFilter = "";
+        if (input.project) {
+          projectFilter = " AND project_key = ?";
+          values.push(input.project);
+        }
+        const excludes = (input.exclude ?? []).map((p) => p.trim()).filter(Boolean);
+        for (const pattern of excludes) {
+          projectFilter += " AND project_key NOT LIKE ? ESCAPE '\\'";
+          values.push(pattern.replace(/[\\%_]/g, "\\$&").replace(/\*/g, "%"));
+        }
+        const perDay = this.db.all(
+          `SELECT strftime('%Y-%m-%d', minute * 60, 'unixepoch', 'localtime') AS day, project_key, branch,
+              SUM(ai_s) AS ai_s, SUM(human_s) AS human_s, SUM(MIN(60, ai_s + human_s)) AS wall_s
+       FROM (
+         SELECT minute, project_key, branch,
+                SUM(CASE WHEN kind = 'ai' THEN secs ELSE 0 END) AS ai_s,
+                SUM(CASE WHEN kind = 'human' THEN secs ELSE 0 END) AS human_s
+         FROM worklog_minutes WHERE minute >= ? AND minute < ?${projectFilter}
+         GROUP BY minute, project_key, branch
+       )
+       GROUP BY day, project_key, branch ORDER BY day`,
+          ...values
+        );
+        const wall = this.db.get(
+          `SELECT SUM(MIN(60, s)) AS n FROM (
+         SELECT minute, SUM(secs) AS s FROM worklog_minutes WHERE minute >= ? AND minute < ?${projectFilter} GROUP BY minute
+       )`,
+          ...values
+        );
+        const factValues = [localDayOf(input.from), localDayOf(input.to - 1)];
+        if (input.project) factValues.push(input.project);
+        let factFilter = input.project ? " AND project_key = ?" : "";
+        for (const pattern of excludes) {
+          factFilter += " AND project_key NOT LIKE ? ESCAPE '\\'";
+          factValues.push(pattern.replace(/[\\%_]/g, "\\$&").replace(/\*/g, "%"));
+        }
+        const facts = this.db.all(
+          `SELECT day, project_key, branch, SUM(prompts) AS prompts, SUM(edits) AS edits, MAX(first_prompt) AS first_prompt
+       FROM worklog_facts WHERE day >= ? AND day <= ?${factFilter}
+       GROUP BY day, project_key, branch ORDER BY day`,
+          ...factValues
+        );
+        return { perDay, facts, wall_s: wall?.n ?? 0 };
+      }
+      /** Notes, commits and task groups that belong to one branch inside [from, to). */
+      worklogActivity(project, branch, from, to) {
+        const notes = this.db.all(
+          `SELECT type, title, created_at FROM entries
+       WHERE project_key = ? AND created_at >= ? AND created_at < ?
+         AND (scope_ref = ? OR (',' || COALESCE(tags, '') || ',') LIKE ?)
+       ORDER BY created_at LIMIT 40`,
+          project,
+          from,
+          to,
+          branch,
+          `%,branch:${branch},%`
+        );
+        const groups = this.db.all(
+          `SELECT task_group, COUNT(*) AS total, SUM(status = 'completed') AS completed
+       FROM tasks WHERE project_key = ? AND branch = ? AND created_at >= ? AND created_at < ?
+       GROUP BY task_group`,
+          project,
+          branch,
+          from,
+          to
+        );
+        return { notes, groups };
+      }
+      /** Active time after the last export, per branch. */
+      worklogPending(target) {
+        return this.db.all(
+          `SELECT m.project_key, m.branch,
+              SUM(CASE WHEN m.kind = 'ai' THEN m.secs ELSE 0 END) AS ai_s,
+              SUM(CASE WHEN m.kind = 'human' THEN m.secs ELSE 0 END) AS human_s,
+              COUNT(DISTINCT m.minute) AS minutes
+       FROM worklog_minutes m
+       LEFT JOIN worklog_exports x ON x.project_key = m.project_key AND x.branch = m.branch AND x.target = ?
+       WHERE m.minute > COALESCE(x.through_minute, -1)
+       GROUP BY m.project_key, m.branch ORDER BY minutes DESC`,
+          target
+        );
+      }
+      worklogMarkExported(project, branch, target) {
+        const last = this.db.get(
+          "SELECT MAX(minute) AS m FROM worklog_minutes WHERE project_key = ? AND branch = ?",
+          project,
+          branch
+        );
+        if (last?.m == null) throw new StoreError("not_found", `No worklog time for ${project} / ${branch}`);
+        this.db.run(
+          `INSERT INTO worklog_exports (project_key, branch, target, through_minute, exported_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(project_key, branch, target) DO UPDATE SET through_minute = excluded.through_minute, exported_at = excluded.exported_at`,
+          project,
+          branch,
+          target,
+          last.m,
+          this.clock()
+        );
+        return { project, branch, target, through_minute: last.m };
+      }
       // ─── Export / import ───────────────────────────────────
       exportAll(project) {
         const tables = {};
-        const scoped = (col, join5 = "") => project ? ` ${join5} WHERE ${col} = ?` : "";
+        const scoped = (col, join6 = "") => project ? ` ${join6} WHERE ${col} = ?` : "";
         const args = project ? [project] : [];
         const cols = (table, alias) => EXPORT_COLUMNS[table].map((c) => `${alias}.${c}`).join(", ");
         tables.projects = this.db.all(`SELECT ${cols("projects", "p")} FROM projects p${scoped("p.key")}`, ...args);
@@ -23561,65 +24358,16 @@ var init_store = __esm({
   }
 });
 
-// src/node/project.ts
-import { execFileSync } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-function git(cwd, ...args) {
-  try {
-    const out = execFileSync("git", ["-C", cwd, ...args], {
-      encoding: "utf8",
-      timeout: 2e3,
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-    return out || null;
-  } catch {
-    return null;
-  }
-}
-function keyFromRemote(url) {
-  const parts = url.trim().replace(/\.git$/, "").split(/[/:]+/).filter(Boolean);
-  if (parts.length < 2) return null;
-  return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`.toLowerCase();
-}
-function pinnedProject(root) {
-  try {
-    const parsed = JSON.parse(readFileSync(join(root, ".task-runner.json"), "utf8"));
-    return typeof parsed.project === "string" && parsed.project.trim() ? parsed.project.trim() : null;
-  } catch {
-    return null;
-  }
-}
-function detectProject(cwd, lookupByPath, env = process.env) {
-  let real = cwd;
-  try {
-    real = realpathSync(cwd);
-  } catch {
-  }
-  const root = git(real, "rev-parse", "--show-toplevel") ?? real;
-  const branch = git(real, "branch", "--show-current");
-  const remote = git(real, "remote", "get-url", "origin");
-  const common = git(real, "rev-parse", "--path-format=absolute", "--git-common-dir");
-  const mainRoot = common && basename(common) === ".git" ? dirname(common) : root;
-  const project = env.TASK_RUNNER_PROJECT || pinnedProject(root) || lookupByPath?.(root) || (mainRoot !== root ? lookupByPath?.(mainRoot) : null) || (remote ? keyFromRemote(remote) : null) || basename(root);
-  return { project, project_path: root, branch };
-}
-var init_project = __esm({
-  "src/node/project.ts"() {
-    "use strict";
-  }
-});
-
 // src/node/sqlite.ts
 import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname as dirname2, join as join2 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { dirname as dirname3, join as join3 } from "node:path";
 function defaultDbPath(env = process.env) {
   if (env.TASK_RUNNER_DB) return env.TASK_RUNNER_DB;
-  return join2(env.TASK_RUNNER_HOME || join2(homedir(), ".task-runner"), "memory.db");
+  return join3(env.TASK_RUNNER_HOME || join3(homedir2(), ".task-runner"), "memory.db");
 }
 function openDb(path) {
-  if (path !== ":memory:") mkdirSync(dirname2(path), { recursive: true, mode: 448 });
+  if (path !== ":memory:") mkdirSync(dirname3(path), { recursive: true, mode: 448 });
   const { DatabaseSync } = process.getBuiltinModule("node:sqlite");
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;");
@@ -23730,8 +24478,8 @@ __export(commands_exports, {
   projectsCommand: () => projectsCommand,
   snapshot: () => snapshot
 });
-import { existsSync, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync } from "node:fs";
-import { dirname as dirname3, join as join3, resolve } from "node:path";
+import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync } from "node:fs";
+import { dirname as dirname4, join as join4, resolve } from "node:path";
 function openStore() {
   const path = defaultDbPath();
   const db = openDb(path);
@@ -23851,8 +24599,8 @@ function exportCommand(args) {
     if (!out) fail2("--out <directory> is required for --format markdown");
     const files = renderVault(data);
     for (const f of files) {
-      const target = join3(resolve(out), f.path);
-      mkdirSync2(dirname3(target), { recursive: true });
+      const target = join4(resolve(out), f.path);
+      mkdirSync2(dirname4(target), { recursive: true });
       writeFileSync(target, f.content);
     }
     console.error(`Wrote ${files.length} files to ${resolve(out)}`);
@@ -23861,7 +24609,7 @@ function exportCommand(args) {
   if (format !== "json") fail2(`Unknown format '${format}'. Use json or markdown.`);
   const text2 = JSON.stringify(data);
   if (out) {
-    mkdirSync2(dirname3(resolve(out)), { recursive: true });
+    mkdirSync2(dirname4(resolve(out)), { recursive: true });
     writeFileSync(out, text2);
     console.error(`Exported to ${resolve(out)}`);
   } else {
@@ -23915,7 +24663,7 @@ function doctor() {
   const path = defaultDbPath();
   console.log(`task-runner-mcp ${SERVER_VERSION}`);
   console.log(`node         ${process.version}`);
-  console.log(`database     ${path} (${existsSync(path) ? "exists" : "will be created on first use"})`);
+  console.log(`database     ${path} (${existsSync2(path) ? "exists" : "will be created on first use"})`);
   try {
     const { store, db } = openStore();
     const version2 = db.get("SELECT sqlite_version() AS v")?.v;
@@ -23959,13 +24707,108 @@ var init_commands = __esm({
   }
 });
 
+// src/cli/worklog.ts
+var worklog_exports = {};
+__export(worklog_exports, {
+  worklogCommand: () => worklogCommand,
+  worklogOptions: () => worklogOptions
+});
+import { resolve as resolve2 } from "node:path";
+function worklogOptions(args) {
+  const minutes = (name, fallback) => {
+    const raw = flag(args, name) ?? process.env[name.slice(2).toUpperCase().replace(/-/g, "_")];
+    const n = raw === void 0 ? NaN : Number(raw);
+    return Number.isFinite(n) && n > 0 ? n * 60 : fallback;
+  };
+  return {
+    humanCapSeconds: minutes("--human-cap", DEFAULT_OPTIONS.humanCapSeconds),
+    aiCapSeconds: minutes("--ai-cap", DEFAULT_OPTIONS.aiCapSeconds)
+  };
+}
+async function worklogCommand(args) {
+  const [first] = args;
+  const sub = first && !first.startsWith("--") ? first : "report";
+  const { store, db } = openStore();
+  try {
+    const options = worklogOptions(args);
+    const explicitSince = flag(args, "--since-days");
+    const scan = (sinceDays = args.includes("--all") ? null : Number(explicitSince ?? 120)) => scanWorklog(store, {
+      sinceDays,
+      options,
+      onFile: process.stderr.isTTY ? () => process.stderr.write(".") : void 0
+    });
+    if (sub === "scan") {
+      const result = await scan();
+      console.log(`Scanned ${result.scanned} transcripts, ${result.skipped} unchanged.`);
+      return;
+    }
+    if (sub === "pending") {
+      if (!args.includes("--no-scan")) await scan();
+      const target = flag(args, "--target") ?? "default";
+      const rows = store.worklogPending(target);
+      if (rows.length === 0) console.log("Nothing waiting for export.");
+      for (const r of rows) {
+        console.log(`${r.project_key}	${taskInfo(r.branch).label}	${r.branch}	you ${formatDuration(r.human_s)}	agent ${formatDuration(r.ai_s)}	wall ${formatDuration(r.minutes * 60)}`);
+      }
+      return;
+    }
+    if (sub === "exported") {
+      const [, project2, branch] = args;
+      if (!project2 || !branch) throw new Error("Usage: task-runner-mcp worklog exported <project> <branch> [--target name]");
+      console.log(JSON.stringify(store.worklogMarkExported(project2, branch, flag(args, "--target") ?? "default")));
+      return;
+    }
+    if (sub !== "report") throw new Error("Usage: task-runner-mcp worklog [report|scan|pending|exported] [options]");
+    const range = resolveRange({
+      today: args.includes("--today"),
+      yesterday: args.includes("--yesterday"),
+      week: args.includes("--week"),
+      lastWeek: args.includes("--last-week"),
+      month: args.includes("--month"),
+      days: flag(args, "--days") ? Number(flag(args, "--days")) : void 0,
+      from: flag(args, "--from"),
+      to: flag(args, "--to")
+    });
+    if (!args.includes("--no-scan")) {
+      const daysBack = Math.ceil((Date.now() / 1e3 - range.from) / 86400) + 1;
+      await scan(args.includes("--all") ? null : Number(explicitSince ?? Math.max(daysBack, 2)));
+      if (process.stderr.isTTY) process.stderr.write("\n");
+    }
+    let project = flag(args, "--project") ?? null;
+    if (project === ".") project = projectFor(store, resolve2(flag(args, "--cwd") ?? process.cwd())).project;
+    const exclude = (flag(args, "--exclude") ?? process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
+    const format = flag(args, "--format") ?? "text";
+    if (format === "csv") {
+      console.log(renderCsv(store, { range, project, exclude }));
+      return;
+    }
+    const detail = args.includes("--detail") || format === "md" || format === "json";
+    const report = buildReport(store, { range, project, exclude, detail });
+    if (format === "json") console.log(JSON.stringify(report));
+    else if (format === "md") console.log(renderMarkdown(report));
+    else if (format === "text") console.log(renderText(report, { detail }));
+    else throw new Error(`Unknown format '${format}'. Use text, md, csv or json.`);
+  } finally {
+    db.close();
+  }
+}
+var init_worklog = __esm({
+  "src/cli/worklog.ts"() {
+    "use strict";
+    init_compute();
+    init_report();
+    init_scan();
+    init_commands();
+  }
+});
+
 // src/cli/serve.ts
 var serve_exports = {};
 __export(serve_exports, {
   serve: () => serve
 });
-import { existsSync as existsSync2 } from "node:fs";
-import { resolve as resolve2 } from "node:path";
+import { existsSync as existsSync3 } from "node:fs";
+import { resolve as resolve3 } from "node:path";
 async function serve() {
   const { store, db } = openStore();
   const cwd = process.env.TASK_RUNNER_CWD || process.cwd();
@@ -23976,8 +24819,55 @@ async function serve() {
   const server = createServer({
     store,
     session,
-    fileExists: (root, relative) => existsSync2(resolve2(root, relative))
+    fileExists: (root, relative) => existsSync3(resolve3(root, relative)),
+    worklog: async (input) => {
+      const range = resolveRange({
+        today: input.range === "today",
+        yesterday: input.range === "yesterday",
+        week: input.range === "week",
+        lastWeek: input.range === "last-week",
+        month: input.range === "month",
+        from: input.range === "custom" ? input.from : void 0,
+        to: input.range === "custom" ? input.to : void 0
+      });
+      const daysBack = Math.ceil((Date.now() / 1e3 - range.from) / 86400) + 1;
+      await scanWorklog(store, { sinceDays: Math.max(daysBack, 2), options: worklogOptions([]) });
+      const exclude = (process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
+      const report = buildReport(store, { range, project: input.project, exclude, detail: input.detail, detailLimit: 10 });
+      return {
+        period: range.label,
+        totals: {
+          you: formatDuration(report.totals.you_s),
+          agent: formatDuration(report.totals.agent_s),
+          wall: formatDuration(report.totals.wall_s),
+          tasks: report.totals.tasks,
+          projects: report.totals.projects
+        },
+        by_day: report.days.map((d) => ({ day: d.day, you: formatDuration(d.you_s), agent: formatDuration(d.agent_s), wall: formatDuration(d.wall_s) })),
+        tasks: report.rows.slice(0, 20).map((r) => ({
+          project: r.project,
+          task: r.label,
+          kind: r.kind,
+          you: formatDuration(r.you_s),
+          agent: formatDuration(r.agent_s),
+          wall: formatDuration(r.wall_s),
+          days: r.days,
+          prompts: r.prompts,
+          file_edits: r.edits,
+          started_from: r.first_prompt ?? void 0,
+          task_groups: r.task_groups?.map((g) => `${g.name} ${g.done}/${g.total}`),
+          notes: r.notes?.slice(0, 6).map((n) => `${n.at} [${n.type}] ${n.title}`)
+        })),
+        more_tasks: Math.max(0, report.rows.length - 20) || void 0
+      };
+    }
   });
+  setTimeout(() => {
+    const now = Math.floor(Date.now() / 1e3);
+    if (now - Number(store.worklogSetting("worklog_warmed_at") ?? 0) < 600) return;
+    store.setWorklogSetting("worklog_warmed_at", String(now));
+    void scanWorklog(store, { sinceDays: 8, options: worklogOptions([]) }).catch(() => void 0);
+  }, 2e4).unref();
   const close = () => {
     try {
       db.close();
@@ -23995,7 +24885,10 @@ var init_serve = __esm({
     init_stdio2();
     init_server3();
     init_session();
+    init_report();
+    init_scan();
     init_commands();
+    init_worklog();
   }
 });
 
@@ -24168,9 +25061,9 @@ __export(dashboard_exports, {
   findStaticDir: () => findStaticDir
 });
 import { execFile } from "node:child_process";
-import { existsSync as existsSync3, readFileSync as readFileSync3, statSync } from "node:fs";
+import { existsSync as existsSync4, readFileSync as readFileSync3, statSync as statSync2 } from "node:fs";
 import { createServer as createServer2 } from "node:http";
-import { dirname as dirname4, extname, join as join4, normalize, resolve as resolve3, sep } from "node:path";
+import { dirname as dirname5, extname, join as join5, normalize, resolve as resolve4, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 function readBody(req) {
   return new Promise((resolveBody, reject) => {
@@ -24197,10 +25090,36 @@ function send(res, status, body, type) {
   });
   res.end(body);
 }
+async function worklogApi(store, url) {
+  const q = url.searchParams;
+  const range = q.get("range") ?? "week";
+  try {
+    const resolved = resolveRange({
+      today: range === "today",
+      yesterday: range === "yesterday",
+      week: range === "week",
+      lastWeek: range === "last-week",
+      month: range === "month",
+      from: range === "custom" ? q.get("from") ?? void 0 : void 0,
+      to: range === "custom" ? q.get("to") ?? void 0 : void 0
+    });
+    const daysBack = Math.ceil((Date.now() / 1e3 - resolved.from) / 86400) + 1;
+    await scanWorklog(store, { sinceDays: Math.max(daysBack, 2), options: worklogOptions([]) });
+    const project = q.get("project") || null;
+    const exclude = (process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
+    if (url.pathname.endsWith(".csv")) {
+      return { status: 200, body: renderCsv(store, { range: resolved, project, exclude }), type: "text/csv; charset=utf-8" };
+    }
+    const report = buildReport(store, { range: resolved, project, exclude, detail: q.get("detail") === "true" });
+    return { status: 200, body: JSON.stringify({ success: true, ...report }), type: "application/json" };
+  } catch (error2) {
+    return { status: 400, body: JSON.stringify({ error: error2 instanceof Error ? error2.message : "Bad request" }), type: "application/json" };
+  }
+}
 function findStaticDir() {
-  const here = dirname4(fileURLToPath(import.meta.url));
-  for (const candidate of [join4(here, "dashboard"), join4(here, "..", "..", "dist", "dashboard")]) {
-    if (existsSync3(join4(candidate, "index.html"))) return candidate;
+  const here = dirname5(fileURLToPath(import.meta.url));
+  for (const candidate of [join5(here, "dashboard"), join5(here, "..", "..", "dist", "dashboard")]) {
+    if (existsSync4(join5(candidate, "index.html"))) return candidate;
   }
   return null;
 }
@@ -24226,6 +25145,10 @@ function createDashboardServer(store, staticDir) {
             return sendJson(res, 400, { error: "Invalid JSON" });
           }
         }
+        if (method === "GET" && (url.pathname === "/api/worklog" || url.pathname === "/api/worklog.csv")) {
+          const out2 = await worklogApi(store, url);
+          return send(res, out2.status, out2.body, out2.type);
+        }
         const out = await handleApi(store, {
           method: method === "HEAD" ? "GET" : method,
           path: url.pathname.slice("/api".length) || "/",
@@ -24243,13 +25166,13 @@ function createDashboardServer(store, staticDir) {
           TYPES[".html"]
         );
       }
-      const root = resolve3(staticDir);
-      let file = normalize(join4(root, decodeURIComponent(url.pathname)));
+      const root = resolve4(staticDir);
+      let file = normalize(join5(root, decodeURIComponent(url.pathname)));
       if (file !== root && !file.startsWith(root + sep)) return sendJson(res, 403, { error: "Forbidden" });
-      if (existsSync3(file) && statSync(file).isDirectory()) file = join4(file, "index.html");
-      if (!existsSync3(file)) {
+      if (existsSync4(file) && statSync2(file).isDirectory()) file = join5(file, "index.html");
+      if (!existsSync4(file)) {
         if (extname(file)) return sendJson(res, 404, { error: "Not found" });
-        file = join4(root, "index.html");
+        file = join5(root, "index.html");
       }
       return send(res, 200, readFileSync3(file), TYPES[extname(file)] ?? "application/octet-stream");
     } catch (error2) {
@@ -24286,7 +25209,10 @@ var init_dashboard = __esm({
   "src/cli/dashboard.ts"() {
     "use strict";
     init_commands();
+    init_report();
+    init_scan();
     init_rest();
+    init_worklog();
     TYPES = {
       ".html": "text/html; charset=utf-8",
       ".js": "text/javascript; charset=utf-8",
@@ -24326,6 +25252,9 @@ Usage: task-runner-mcp [command]
   hook session-start         Print the SessionStart hook output for Claude Code
   snapshot [--cwd d] [--query q | --entity name]
                              JSON view of a project's tasks, notes and graph
+  worklog [--week|--today|--last-week|--month|--from D --to D] [--project k|.] [--exclude a*,b] [--format text|md|csv|json] [--detail]
+                             Time per project and task: you vs the agent
+  worklog pending | exported <project> <branch> | scan
   forget <name> [--type t]   Retire an entity in the current project
   note <text> [--type t]     Save a note for the current project
   dashboard [--port 4747]    Browse memory in a local web UI
@@ -24368,6 +25297,16 @@ async function main() {
     case "dashboard": {
       const { dashboard: dashboard2 } = await Promise.resolve().then(() => (init_dashboard(), dashboard_exports));
       await dashboard2(args);
+      return;
+    }
+    case "worklog": {
+      const { worklogCommand: worklogCommand2 } = await Promise.resolve().then(() => (init_worklog(), worklog_exports));
+      try {
+        await worklogCommand2(args);
+      } catch (error2) {
+        console.error(error2 instanceof Error ? error2.message : error2);
+        process.exit(1);
+      }
       return;
     }
     case "forget":

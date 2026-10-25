@@ -161,3 +161,15 @@ body {
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* Worklog chart: "you" is solid, "agent" is striped, so the two stay apart without colour. */
+.bar-you {
+  background: var(--link);
+}
+.bar-agent {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--warn) 0 4px,
+    color-mix(in srgb, var(--warn) 40%, var(--surface)) 4px 8px
+  );
+}

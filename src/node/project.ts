@@ -6,6 +6,8 @@ export interface DetectedProject {
   project: string;
   project_path: string;
   branch: string | null;
+  /** False when the folder is not inside a git repository. */
+  is_repo: boolean;
 }
 
 function git(cwd: string, ...args: string[]): string | null {
@@ -59,7 +61,8 @@ export function detectProject(
     // keep the path as given
   }
 
-  const root = git(real, "rev-parse", "--show-toplevel") ?? real;
+  const top = git(real, "rev-parse", "--show-toplevel");
+  const root = top ?? real;
   const branch = git(real, "branch", "--show-current");
   const remote = git(real, "remote", "get-url", "origin");
 
@@ -75,5 +78,5 @@ export function detectProject(
     (remote ? keyFromRemote(remote) : null) ||
     basename(root);
 
-  return { project, project_path: root, branch };
+  return { project, project_path: root, branch, is_repo: top !== null };
 }

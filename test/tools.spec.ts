@@ -235,3 +235,24 @@ test("tool output is compact JSON", async () => {
   const res = (await client.callTool({ name: "list_projects", arguments: {} })) as { content: Array<{ text: string }> };
   assert.ok(!res.content[0].text.includes("\n"));
 });
+
+test("the worklog tool exists only when the host can read transcripts", async () => {
+  const { store } = memoryStore();
+  const session = new SessionHolder(() => ({ project: "demo", project_path: "/work/demo", branch: "main", pr: null }));
+  const seen: unknown[] = [];
+  const server = createServer({
+    store, session,
+    worklog: async (input) => {
+      seen.push(input);
+      return { period: "Week", totals: { you: "1h 00m" } };
+    },
+  });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test", version: "0" });
+  await Promise.all([server.connect(a), client.connect(b)]);
+
+  assert.equal((await client.listTools()).tools.length, 17);
+  const res = (await client.callTool({ name: "worklog", arguments: { project: "current", detail: true } })) as { content: Array<{ text: string }> };
+  assert.equal(JSON.parse(res.content[0].text).totals.you, "1h 00m");
+  assert.deepEqual(seen[0], { range: "week", from: undefined, to: undefined, project: "demo", detail: true });
+});

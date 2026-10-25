@@ -1,4 +1,4 @@
-export type Tab = 'tasks' | 'notes' | 'graph' | 'search'
+export type Tab = 'tasks' | 'notes' | 'graph' | 'search' | 'time'
 
 export type TaskRow = {
   id: string
@@ -55,6 +55,20 @@ export type SearchState = {
   notes: string[]
 }
 
+export type WorklogView = {
+  label: string
+  totals: { you_s: number; agent_s: number; wall_s: number; tasks: number }
+  rows: Array<{
+    project: string
+    label: string
+    kind: string
+    you_s: number
+    agent_s: number
+    wall_s: number
+  }>
+  days: Array<{ day: string; you_s: number; agent_s: number }>
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'task-runner': {
@@ -62,6 +76,7 @@ declare module 'claude-code' {
       tab: Tab
       detail: Detail | null
       search: SearchState | null
+      worklog: WorklogView | null
     }
   }
 }

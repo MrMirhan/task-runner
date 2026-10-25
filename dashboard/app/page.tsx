@@ -11,9 +11,10 @@ import GraphView from "./components/GraphView";
 import EntityPanel from "./components/EntityPanel";
 import EntryList from "./components/EntryList";
 import TasksView from "./components/TasksView";
+import TimeView from "./components/TimeView";
 import ThemeToggle from "./components/ThemeToggle";
 
-type Tab = "graph" | "entries" | "tasks";
+type Tab = "graph" | "entries" | "tasks" | "time";
 
 const PROJECT_KEY = "task-runner-project";
 
@@ -146,6 +147,7 @@ export default function Home() {
     { key: "graph", label: "Graph" },
     { key: "entries", label: "Notes" },
     { key: "tasks", label: "Tasks" },
+    { key: "time", label: "Time" },
   ];
 
   let body: React.ReactNode;
@@ -172,9 +174,9 @@ export default function Home() {
   } else if (projectKey) {
     body = (
       <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-3 md:min-h-0">
-        <StatsCards stats={stats} taskGroups={taskGroups} />
+        {tab !== "time" && <StatsCards stats={stats} taskGroups={taskGroups} />}
 
-        {dataError && (
+        {tab !== "time" && dataError && (
           <p className="text-sm text-bad" role="alert">
             {dataError}
           </p>
@@ -258,6 +260,10 @@ export default function Home() {
           ) : tab === "entries" ? (
             <div className="min-w-0 flex-1 p-4 md:overflow-y-auto">
               <EntryList key={projectKey} projectKey={projectKey} scope={scope} refreshKey={reloadKey} onChange={reload} />
+            </div>
+          ) : tab === "time" ? (
+            <div className="min-w-0 flex-1 p-4 md:overflow-y-auto">
+              <TimeView projects={projects} refreshKey={reloadKey} />
             </div>
           ) : (
             <div className="min-w-0 flex-1 p-4 md:overflow-y-auto">

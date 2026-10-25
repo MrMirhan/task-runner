@@ -183,3 +183,61 @@ export function projectLabel(project: Project, all: Project[]): string {
   const clash = all.some((p) => p.key !== project.key && (p.project_name || p.key) === name);
   return clash ? `${name} (${project.key})` : name;
 }
+
+// Worklog (GET /api/worklog). Durations are seconds.
+export type WorklogRangeKey = "today" | "yesterday" | "week" | "last-week" | "month" | "custom";
+
+export type WorklogKind = "feature" | "fix" | "chore" | "other";
+
+export interface WorklogNote {
+  type: string;
+  title: string;
+  at: string;
+}
+
+export interface WorklogTaskGroup {
+  name: string;
+  done: number;
+  total: number;
+}
+
+export interface WorklogRow {
+  project: string;
+  label: string;
+  kind: WorklogKind;
+  branches: string[];
+  you_s: number;
+  agent_s: number;
+  wall_s: number;
+  prompts: number;
+  edits: number;
+  days: string[];
+  first_prompt: string | null;
+  notes?: WorklogNote[];
+  task_groups?: WorklogTaskGroup[];
+}
+
+export interface WorklogDay {
+  day: string;
+  you_s: number;
+  agent_s: number;
+  wall_s: number;
+}
+
+export interface WorklogTotals {
+  you_s: number;
+  agent_s: number;
+  wall_s: number;
+  projects: number;
+  tasks: number;
+  prompts: number;
+  edits: number;
+}
+
+export interface WorklogReport {
+  success: boolean;
+  range: { label: string; from: number; to: number };
+  rows: WorklogRow[];
+  days: WorklogDay[];
+  totals: WorklogTotals;
+}

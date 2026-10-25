@@ -19,6 +19,7 @@ import { StoreError, assertIn, required } from "./errors.ts";
 import { fold, foldSql, ftsQuery } from "./fts.ts";
 import { migrate } from "./schema.ts";
 import type { TaskInput } from "./parser.ts";
+import type { FactRow, MinuteRow } from "../worklog/compute.ts";
 
 const ENTRY_COLS =
   "id, project_key, scope, scope_ref, type, title, content, tags, session_id, created_at";
@@ -62,6 +63,12 @@ export interface ExportData {
 function newId(prefix: string): string {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return `${prefix}_${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function localDayOf(epochSeconds: number): string {
+  const d = new Date(epochSeconds * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function clamp(n: number, min: number, max: number): number {
@@ -119,6 +126,16 @@ export class Store {
       path,
     );
     return row?.key ?? null;
+  }
+
+  findProjectByPathPrefix(prefix: string): string | null {
+    const escaped = prefix.replace(/[\\%_]/g, "\\$&");
+    return (
+      this.db.get<{ key: string }>(
+        "SELECT project_key AS key FROM project_paths WHERE path LIKE ? ESCAPE '\\' ORDER BY seen_at DESC LIMIT 1",
+        `${escaped}%`,
+      )?.key ?? null
+    );
   }
 
   listProjects() {
@@ -908,6 +925,154 @@ export class Store {
       this.db.run("DELETE FROM tasks WHERE project_key = ?", project);
     }
     return { cleared: before?.n ?? 0, task_group: input.task_group ?? null };
+  }
+
+  // ─── Worklog ───────────────────────────────────────────
+
+  worklogFileState(path: string): { size: number; mtime: number } | null {
+    return this.db.get<{ size: number; mtime: number }>("SELECT size, mtime FROM worklog_files WHERE path = ?", path) ?? null;
+  }
+
+  worklogSetting(key: string): string | null {
+    return this.db.get<{ value: string }>("SELECT value FROM schema_meta WHERE key = ?", key)?.value ?? null;
+  }
+
+  setWorklogSetting(key: string, value: string): void {
+    this.db.run(
+      "INSERT INTO schema_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      key, value,
+    );
+  }
+
+  clearWorklog(): void {
+    this.db.transaction(() => {
+      this.db.run("DELETE FROM worklog_minutes");
+      this.db.run("DELETE FROM worklog_facts");
+      this.db.run("DELETE FROM worklog_files");
+    });
+  }
+
+  replaceWorklogFile(path: string, size: number, mtime: number, minutes: MinuteRow[], facts: FactRow[]): void {
+    this.db.transaction(() => {
+      this.db.run("DELETE FROM worklog_files WHERE path = ?", path);
+      this.db.run("INSERT INTO worklog_files (path, size, mtime) VALUES (?, ?, ?)", path, size, mtime);
+      for (const m of minutes) {
+        this.db.run(
+          `INSERT INTO worklog_minutes (file, session_id, minute, kind, project_key, branch, secs)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(file, minute, kind, project_key, branch) DO UPDATE SET secs = secs + excluded.secs`,
+          path, m.sessionId, m.minute, m.kind, m.project, m.branch, m.secs,
+        );
+      }
+      for (const f of facts) {
+        this.db.run(
+          `INSERT INTO worklog_facts (file, day, project_key, branch, prompts, edits, first_prompt)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          path, f.day, f.project, f.branch, f.prompts, f.edits, f.firstPrompt,
+        );
+      }
+    });
+  }
+
+  /** Time per project and branch inside [from, to) (epoch seconds), by day. */
+  worklogRows(input: { from: number; to: number; project?: string | null; exclude?: string[] }) {
+    const values: SqlValue[] = [Math.floor(input.from / 60), Math.floor(input.to / 60)];
+    let projectFilter = "";
+    if (input.project) {
+      projectFilter = " AND project_key = ?";
+      values.push(input.project);
+    }
+    // `*` is a wildcard, so "videoatolyesi*" hides a family of projects.
+    const excludes = (input.exclude ?? []).map((p) => p.trim()).filter(Boolean);
+    for (const pattern of excludes) {
+      projectFilter += " AND project_key NOT LIKE ? ESCAPE '\\'";
+      values.push(pattern.replace(/[\\%_]/g, "\\$&").replace(/\*/g, "%"));
+    }
+    const perDay = this.db.all<{
+      day: string; project_key: string; branch: string; ai_s: number; human_s: number; wall_s: number;
+    }>(
+      `SELECT strftime('%Y-%m-%d', minute * 60, 'unixepoch', 'localtime') AS day, project_key, branch,
+              SUM(ai_s) AS ai_s, SUM(human_s) AS human_s, SUM(MIN(60, ai_s + human_s)) AS wall_s
+       FROM (
+         SELECT minute, project_key, branch,
+                SUM(CASE WHEN kind = 'ai' THEN secs ELSE 0 END) AS ai_s,
+                SUM(CASE WHEN kind = 'human' THEN secs ELSE 0 END) AS human_s
+         FROM worklog_minutes WHERE minute >= ? AND minute < ?${projectFilter}
+         GROUP BY minute, project_key, branch
+       )
+       GROUP BY day, project_key, branch ORDER BY day`,
+      ...values,
+    );
+    const wall = this.db.get<{ n: number }>(
+      `SELECT SUM(MIN(60, s)) AS n FROM (
+         SELECT minute, SUM(secs) AS s FROM worklog_minutes WHERE minute >= ? AND minute < ?${projectFilter} GROUP BY minute
+       )`,
+      ...values,
+    );
+
+    const factValues: SqlValue[] = [localDayOf(input.from), localDayOf(input.to - 1)];
+    if (input.project) factValues.push(input.project);
+    let factFilter = input.project ? " AND project_key = ?" : "";
+    for (const pattern of excludes) {
+      factFilter += " AND project_key NOT LIKE ? ESCAPE '\\'";
+      factValues.push(pattern.replace(/[\\%_]/g, "\\$&").replace(/\*/g, "%"));
+    }
+    const facts = this.db.all<{
+      day: string; project_key: string; branch: string; prompts: number; edits: number; first_prompt: string | null;
+    }>(
+      `SELECT day, project_key, branch, SUM(prompts) AS prompts, SUM(edits) AS edits, MAX(first_prompt) AS first_prompt
+       FROM worklog_facts WHERE day >= ? AND day <= ?${factFilter}
+       GROUP BY day, project_key, branch ORDER BY day`,
+      ...factValues,
+    );
+    return { perDay, facts, wall_s: wall?.n ?? 0 };
+  }
+
+  /** Notes, commits and task groups that belong to one branch inside [from, to). */
+  worklogActivity(project: string, branch: string, from: number, to: number) {
+    const notes = this.db.all<{ type: string; title: string; created_at: number }>(
+      `SELECT type, title, created_at FROM entries
+       WHERE project_key = ? AND created_at >= ? AND created_at < ?
+         AND (scope_ref = ? OR (',' || COALESCE(tags, '') || ',') LIKE ?)
+       ORDER BY created_at LIMIT 40`,
+      project, from, to, branch, `%,branch:${branch},%`,
+    );
+    const groups = this.db.all<{ task_group: string; total: number; completed: number }>(
+      `SELECT task_group, COUNT(*) AS total, SUM(status = 'completed') AS completed
+       FROM tasks WHERE project_key = ? AND branch = ? AND created_at >= ? AND created_at < ?
+       GROUP BY task_group`,
+      project, branch, from, to,
+    );
+    return { notes, groups };
+  }
+
+  /** Active time after the last export, per branch. */
+  worklogPending(target: string) {
+    return this.db.all<{ project_key: string; branch: string; ai_s: number; human_s: number; minutes: number }>(
+      `SELECT m.project_key, m.branch,
+              SUM(CASE WHEN m.kind = 'ai' THEN m.secs ELSE 0 END) AS ai_s,
+              SUM(CASE WHEN m.kind = 'human' THEN m.secs ELSE 0 END) AS human_s,
+              COUNT(DISTINCT m.minute) AS minutes
+       FROM worklog_minutes m
+       LEFT JOIN worklog_exports x ON x.project_key = m.project_key AND x.branch = m.branch AND x.target = ?
+       WHERE m.minute > COALESCE(x.through_minute, -1)
+       GROUP BY m.project_key, m.branch ORDER BY minutes DESC`,
+      target,
+    );
+  }
+
+  worklogMarkExported(project: string, branch: string, target: string) {
+    const last = this.db.get<{ m: number | null }>(
+      "SELECT MAX(minute) AS m FROM worklog_minutes WHERE project_key = ? AND branch = ?",
+      project, branch,
+    );
+    if (last?.m == null) throw new StoreError("not_found", `No worklog time for ${project} / ${branch}`);
+    this.db.run(
+      `INSERT INTO worklog_exports (project_key, branch, target, through_minute, exported_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(project_key, branch, target) DO UPDATE SET through_minute = excluded.through_minute, exported_at = excluded.exported_at`,
+      project, branch, target, last.m, this.clock(),
+    );
+    return { project, branch, target, through_minute: last.m };
   }
 
   // ─── Export / import ───────────────────────────────────

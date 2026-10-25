@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Detail, SearchState, Snapshot, Tab } from '../types'
+import type { Detail, SearchState, Snapshot, Tab, WorklogView } from '../types'
 
 const PANE = 'brain'
 const TITLE = 'Task Runner'
@@ -10,12 +10,14 @@ const snapshotValue = atom({ plugin: 'task-runner', key: 'snapshot' } as const, 
 const tabValue = atom({ plugin: 'task-runner', key: 'tab' } as const, 'tasks')
 const detailValue = atom({ plugin: 'task-runner', key: 'detail' } as const, null)
 const searchValue = atom({ plugin: 'task-runner', key: 'search' } as const, null)
+const worklogValue = atom({ plugin: 'task-runner', key: 'worklog' } as const, null)
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'tasks', label: 'Tasks' },
   { id: 'notes', label: 'Notes' },
   { id: 'graph', label: 'Graph' },
   { id: 'search', label: 'Search' },
+  { id: 'time', label: 'Time' },
 ]
 
 const GLYPH: Record<string, string> = { completed: '✓', failed: '✗', running: '▶', pending: '·' }
@@ -58,6 +60,49 @@ async function cli<T>($: EngineInterface, args: string[]): Promise<T | null> {
     $.ui.log('task-runner: ' + String(error))
     return null
   }
+}
+
+// A first scan reads the transcripts on disk, so worklog calls get a long limit.
+const WORKLOG_TIMEOUT_MS = 180000
+
+async function cliText($: EngineInterface, args: string[]): Promise<string | null> {
+  const cwd = await $.session.cwd()
+  try {
+    const ran = await $.process.run(['node', $.plugin.root + '/dist/cli.js', ...args, '--cwd', cwd], {
+      timeoutMs: WORKLOG_TIMEOUT_MS,
+    })
+    return ran.exitCode === 0 ? ran.stdout.trimEnd() : null
+  } catch (error) {
+    $.ui.log('task-runner: ' + String(error))
+    return null
+  }
+}
+
+async function loadWorklog($: EngineInterface): Promise<void> {
+  const raw = await cliText($, ['worklog', '--week', '--format', 'json'])
+  if (!raw) return
+  try {
+    const report = JSON.parse(raw) as {
+      range: { label: string }
+      totals: WorklogView['totals']
+      rows: WorklogView['rows']
+      days: WorklogView['days']
+    }
+    const view: WorklogView = {
+      label: report.range.label,
+      totals: report.totals,
+      rows: report.rows.slice(0, 14),
+      days: report.days,
+    }
+    await update($, worklogValue, () => view)
+  } catch {
+    $.ui.log('task-runner: could not read the time report')
+  }
+}
+
+function hours(seconds: number): string {
+  const minutes = Math.round(seconds / 60)
+  return minutes >= 60 ? Math.floor(minutes / 60) + 'h ' + String(minutes % 60).padStart(2, '0') + 'm' : minutes + 'm'
 }
 
 async function refresh($: EngineInterface): Promise<void> {
@@ -204,6 +249,7 @@ export const register: Register = (on, options) => {
       await $.command.register({ name: 'brain', description: 'Open the task and memory panel' })
       await $.command.register({ name: 'recall', description: 'Search project memory', argumentHint: '<keywords>' })
       await $.command.register({ name: 'remember', description: 'Save a note to project memory', argumentHint: '<text>' })
+      await $.command.register({ name: 'worklog', description: 'Show time spent by you and the agent', argumentHint: '[today|week|last-week|month]' })
     } catch (error) {
       $.ui.log('task-runner: command registration skipped: ' + String(error))
     }
@@ -233,6 +279,15 @@ export const register: Register = (on, options) => {
       ...raw.search.entries.map(entry => '[' + entry.type + '] ' + entry.title),
     ]
     return { text: lines.length ? lines.join('\n') : 'Nothing found for "' + e.args.trim() + '".' }
+  })
+
+  on('command.run', { command: 'worklog' }, async ($, e) => {
+    const period = e.args.trim() || 'week'
+    if (!['today', 'yesterday', 'week', 'last-week', 'month'].includes(period)) {
+      return { text: 'Usage: /worklog [today|yesterday|week|last-week|month]' }
+    }
+    const text = await cliText($, ['worklog', '--' + period, '--detail'])
+    return { text: text ?? 'task-runner: could not read the time report. Run `node ' + $.plugin.root + '/dist/cli.js doctor`.' }
   })
 
   on('command.run', { command: 'remember' }, async ($, e) => {
@@ -319,6 +374,7 @@ export const register: Register = (on, options) => {
     const tab = await read($, tabValue)
     const detail = await read($, detailValue)
     const search = await read($, searchValue)
+    const worklog = await read($, worklogValue)
     const width = Math.max(24, e.props.bodyColumns)
 
     const tabs = (
@@ -328,7 +384,10 @@ export const register: Register = (on, options) => {
             key={'tab-' + item.id}
             label={item.label}
             variant={tab === item.id ? 'primary' : 'secondary'}
-            onPress={() => update($, tabValue, () => item.id)}
+            onPress={async () => {
+              await update($, tabValue, () => item.id)
+              if (item.id === 'time') await loadWorklog($)
+            }}
           />
         ))}
         <Button key="refresh" label="↻" onPress={() => refresh($)} />
@@ -409,6 +468,32 @@ export const register: Register = (on, options) => {
               </Button>
             ))
           )}
+        </Box>
+      )
+    } else if (tab === 'time') {
+      const peak = Math.max(1, ...(worklog?.days ?? []).map(d => d.you_s + d.agent_s))
+      body = !worklog ? (
+        <Text dimColor>Reading the session transcripts… the first run can take a minute.</Text>
+      ) : (
+        <Box flexDirection="column">
+          <Text bold>{worklog.label}</Text>
+          <Text>
+            You {hours(worklog.totals.you_s)} · agent {hours(worklog.totals.agent_s)} · wall {hours(worklog.totals.wall_s)}
+          </Text>
+          <Text dimColor>Agent time adds up across parallel sessions.</Text>
+          {worklog.days.map(day => (
+            <Text>
+              <Text dimColor>{day.day.slice(5)} </Text>
+              {bar(day.you_s + day.agent_s, peak, 16)} {hours(day.you_s)} / {hours(day.agent_s)}
+            </Text>
+          ))}
+          {worklog.rows.map(row => (
+            <Text>
+              <Text bold>{row.label}</Text> <Text dimColor>{row.project} · {row.kind}</Text> you {hours(row.you_s)} · agent{' '}
+              {hours(row.agent_s)}
+            </Text>
+          ))}
+          <Text dimColor>/worklog prints the full report with notes and commits.</Text>
         </Box>
       )
     } else {

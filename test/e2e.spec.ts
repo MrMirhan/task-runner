@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -29,6 +29,13 @@ async function withServer<T>(home: string, cwd: string, fn: (client: Client) => 
     await client.close();
   }
 }
+
+const localIso = (offsetDays: number): string => {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 
 const text = (res: unknown) => JSON.parse((res as { content: Array<{ text: string }> }).content[0].text);
 
@@ -116,4 +123,54 @@ test("export and import move memory between databases, with a markdown vault", (
   const alpha = execFileSync("cat", [join(vault, "p", "entities", "alpha.md")], { encoding: "utf8" });
   assert.match(alpha, /uses \[\[beta\|Beta\]\]/);
   assert.match(alpha, /- first/);
+});
+
+test("the worklog tool reads transcripts through the real server", async () => {
+  const home = mkdtempSync(join(tmpdir(), "tr-home-"));
+  const base = mkdtempSync(join(tmpdir(), "tr-wl-e2e-"));
+  const repo = join(base, "blog");
+  mkdirSync(repo);
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  git("remote", "add", "origin", "https://github.com/acme/blog.git");
+  git("commit", "-q", "--allow-empty", "-m", "init");
+  git("checkout", "-q", "-b", "fix/BLOG-3-typo");
+
+  const config = join(base, "claude");
+  mkdirSync(join(config, "projects", "-blog"), { recursive: true });
+  const now = Math.floor(Date.now() / 1000);
+  const at = (back: number) => new Date((now - back) * 1000).toISOString();
+  const line = (back: number, type: string, extra: Record<string, unknown>) =>
+    JSON.stringify({ type, isSidechain: false, timestamp: at(back), cwd: repo, gitBranch: "fix/BLOG-3-typo", sessionId: "s", ...extra });
+  writeFileSync(
+    join(config, "projects", "-blog", "s.jsonl"),
+    [
+      line(300, "user", { origin: { kind: "human" }, message: { role: "user", content: "fix the typo on the about page" } }),
+      line(270, "assistant", { message: { role: "assistant", content: [] } }),
+      line(200, "assistant", { message: { role: "assistant", content: [] } }),
+    ].join("\n") + "\n",
+  );
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ["--no-warnings", entry, "serve"],
+    cwd: repo,
+    env: env(home, { CLAUDE_CONFIG_DIR: config }),
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "e2e", version: "0" });
+  await client.connect(transport);
+  try {
+    assert.ok((await client.listTools()).tools.some((t) => t.name === "worklog"));
+    const report = text(await client.callTool({ name: "worklog", arguments: { range: "custom", from: localIso(-1), to: localIso(1), detail: true } }));
+    const task = report.tasks.find((t: any) => t.task === "BLOG-3");
+    assert.ok(task, JSON.stringify(report));
+    assert.equal(task.project, "acme-blog");
+    assert.equal(task.kind, "fix");
+    assert.equal(task.agent, "2m");
+    assert.equal(task.started_from, "fix the typo on the about page");
+  } finally {
+    await client.close();
+  }
 });

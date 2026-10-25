@@ -245,3 +245,51 @@ test('a commit is recorded as a change note without the model', async ($, on) =>
   for (let i = 0; i < 50; i++) await Promise.resolve()
   expect(notes.length).toBe(1)
 })
+
+const REPORT = {
+  range: { label: 'Week 2026-10-19 to 2026-10-25' },
+  totals: { you_s: 4500, agent_s: 36000, wall_s: 30000, tasks: 2, projects: 1 },
+  days: [
+    { day: '2026-10-20', you_s: 1800, agent_s: 14400 },
+    { day: '2026-10-21', you_s: 2700, agent_s: 21600 },
+  ],
+  rows: [
+    { project: 'acme-shop', label: 'SHOP-9', kind: 'feature', you_s: 3000, agent_s: 30000, wall_s: 25000 },
+    { project: 'acme-shop', label: 'fix/null', kind: 'fix', you_s: 1500, agent_s: 6000, wall_s: 5000 },
+  ],
+}
+
+test('the Time tab lists the week per task', async ($, on) => {
+  on('session.cwd', () => ({ value: '/work/acme' }))
+  on('ui.log', () => ({ value: undefined }))
+  on('process.run', (_, e) => {
+    const out = e.argv.includes('worklog') ? REPORT : SNAPSHOT
+    return { value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'refresh' })
+  await ui.press({ key: 'tab-time' })
+
+  expect(await ui.find({ type: 'Text', text: /You 1h 15m · agent 10h 00m · wall 8h 20m/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /SHOP-9 acme-shop · feature you 50m · agent 8h 20m/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /10-21 .* 45m \/ 6h 00m/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('/worklog prints the report and rejects unknown periods', async ($, on) => {
+  const calls: string[][] = []
+  on('session.cwd', () => ({ value: '/work/acme' }))
+  on('ui.log', () => ({ value: undefined }))
+  on('process.run', (_, e) => {
+    calls.push([...e.argv])
+    return { value: { exitCode: 0, stdout: 'Week 2026-10-19 to 2026-10-25\nYou 1h', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+
+  const out = await $.command.run({ command: 'worklog', args: 'last-week' })
+  expect(out.text).toContain('You 1h')
+  expect(calls[0]).toContain('--last-week')
+  expect(calls[0]).toContain('--detail')
+
+  expect((await $.command.run({ command: 'worklog', args: 'fortnight' })).text).toMatch(/Usage/)
+})

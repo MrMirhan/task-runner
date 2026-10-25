@@ -118,6 +118,47 @@ const migrations: Array<(db: Db) => void> = [
         SELECT project_path, key, updated_at FROM projects WHERE project_path IS NOT NULL;
     `);
   },
+  (db) => {
+    db.exec(`
+      CREATE TABLE worklog_files (
+        path TEXT PRIMARY KEY,
+        size INTEGER NOT NULL,
+        mtime INTEGER NOT NULL
+      );
+
+      CREATE TABLE worklog_minutes (
+        file TEXT NOT NULL REFERENCES worklog_files(path) ON DELETE CASCADE,
+        session_id TEXT NOT NULL,
+        minute INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        project_key TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        secs INTEGER NOT NULL,
+        PRIMARY KEY (file, minute, kind, project_key, branch)
+      );
+      CREATE INDEX idx_worklog_minutes_range ON worklog_minutes(minute, project_key, branch);
+
+      CREATE TABLE worklog_facts (
+        file TEXT NOT NULL REFERENCES worklog_files(path) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        project_key TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        prompts INTEGER NOT NULL,
+        edits INTEGER NOT NULL,
+        first_prompt TEXT,
+        PRIMARY KEY (file, day, project_key, branch)
+      );
+
+      CREATE TABLE worklog_exports (
+        project_key TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        target TEXT NOT NULL,
+        through_minute INTEGER NOT NULL,
+        exported_at INTEGER NOT NULL,
+        PRIMARY KEY (project_key, branch, target)
+      );
+    `);
+  },
 ];
 
 export const SCHEMA_VERSION = migrations.length;

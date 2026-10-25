@@ -4,8 +4,12 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { StoreApi } from "../core/api.ts";
+import type { Store } from "../core/store.ts";
 import { flag, openStore } from "./commands.ts";
+import { buildReport, renderCsv, resolveRange } from "../worklog/report.ts";
+import { scanWorklog } from "../worklog/scan.ts";
 import { handleApi } from "./rest.ts";
+import { worklogOptions } from "./worklog.ts";
 
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -52,6 +56,37 @@ function send(res: ServerResponse, status: number, body: string | Buffer, type: 
 const sendJson = (res: ServerResponse, status: number, body: unknown) =>
   send(res, status, JSON.stringify(body), "application/json");
 
+/**
+ * GET /api/worklog?range=today|yesterday|week|last-week|month|custom&from&to&project&detail=true
+ * GET /api/worklog.csv with the same query. Reads the session transcripts first (incremental).
+ */
+async function worklogApi(store: Store, url: URL): Promise<{ status: number; body: string; type: string }> {
+  const q = url.searchParams;
+  const range = q.get("range") ?? "week";
+  try {
+    const resolved = resolveRange({
+      today: range === "today",
+      yesterday: range === "yesterday",
+      week: range === "week",
+      lastWeek: range === "last-week",
+      month: range === "month",
+      from: range === "custom" ? (q.get("from") ?? undefined) : undefined,
+      to: range === "custom" ? (q.get("to") ?? undefined) : undefined,
+    });
+    const daysBack = Math.ceil((Date.now() / 1000 - resolved.from) / 86400) + 1;
+    await scanWorklog(store, { sinceDays: Math.max(daysBack, 2), options: worklogOptions([]) });
+    const project = q.get("project") || null;
+    const exclude = (process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
+    if (url.pathname.endsWith(".csv")) {
+      return { status: 200, body: renderCsv(store, { range: resolved, project, exclude }), type: "text/csv; charset=utf-8" };
+    }
+    const report = buildReport(store, { range: resolved, project, exclude, detail: q.get("detail") === "true" });
+    return { status: 200, body: JSON.stringify({ success: true, ...report }), type: "application/json" };
+  } catch (error) {
+    return { status: 400, body: JSON.stringify({ error: error instanceof Error ? error.message : "Bad request" }), type: "application/json" };
+  }
+}
+
 export function findStaticDir(): string | null {
   const here = dirname(fileURLToPath(import.meta.url));
   for (const candidate of [join(here, "dashboard"), join(here, "..", "..", "dist", "dashboard")]) {
@@ -60,7 +95,7 @@ export function findStaticDir(): string | null {
   return null;
 }
 
-export function createDashboardServer(store: StoreApi, staticDir: string | null): Server {
+export function createDashboardServer(store: Store, staticDir: string | null): Server {
   return createServer(async (req, res) => {
     try {
       const host = req.headers.host ?? "";
@@ -84,6 +119,10 @@ export function createDashboardServer(store: StoreApi, staticDir: string | null)
           } catch {
             return sendJson(res, 400, { error: "Invalid JSON" });
           }
+        }
+        if (method === "GET" && (url.pathname === "/api/worklog" || url.pathname === "/api/worklog.csv")) {
+          const out = await worklogApi(store, url);
+          return send(res, out.status, out.body, out.type);
         }
         const out = await handleApi(store, {
           method: method === "HEAD" ? "GET" : method,

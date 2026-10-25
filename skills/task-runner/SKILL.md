@@ -49,4 +49,5 @@ A task that stays `running` for 30 minutes is offered again by `get_next_task`.
 
 - `graph_stats` shows counts and orphan entities (no relations). With `check: true` it also lists old entities and file entities whose path no longer exists.
 - `forget` retires an entity.
-- The user opens the panel with `/brain`, searches with `/recall <keywords>` and saves a note with `/remember <text>`.
+- `worklog` answers questions about time: how long the user and the agents worked this week, on which project, feature or fix, and what was done. Use `detail: true` when the user wants to know what was done, not only how long.
+- The user opens the panel with `/brain`, searches with `/recall <keywords>` and saves a note with `/remember <text>` and sees time with `/worklog`.

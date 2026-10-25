@@ -22,15 +22,17 @@ export function qs(params: Record<string, Param>): string {
   return parts.length ? `?${parts.join("&")}` : "";
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, {
       method,
       headers: body === undefined ? undefined : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
-  } catch {
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw new ApiError(0, "Cannot reach the dashboard server.");
   }
   const data: unknown = await res.json().catch(() => null);
@@ -48,6 +50,11 @@ export const fetchApi = <T>(path: string) => request<T>("GET", path);
 export const postApi = <T>(path: string, body: unknown) => request<T>("POST", path, body);
 export const putApi = <T>(path: string, body: unknown) => request<T>("PUT", path, body);
 export const deleteApi = <T>(path: string) => request<T>("DELETE", path);
+
+export const fetchApiSignal = <T>(path: string, signal: AbortSignal) => request<T>("GET", path, undefined, signal);
+
+/** Same-origin URL a plain link can download; the CSV endpoint takes the same query as /worklog. */
+export const apiUrl = (path: string) => `${API_BASE}${path}`;
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";

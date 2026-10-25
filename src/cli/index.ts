@@ -24,6 +24,9 @@ Usage: task-runner-mcp [command]
   hook session-start         Print the SessionStart hook output for Claude Code
   snapshot [--cwd d] [--query q | --entity name]
                              JSON view of a project's tasks, notes and graph
+  worklog [--week|--today|--last-week|--month|--from D --to D] [--project k|.] [--exclude a*,b] [--format text|md|csv|json] [--detail]
+                             Time per project and task: you vs the agent
+  worklog pending | exported <project> <branch> | scan
   forget <name> [--type t]   Retire an entity in the current project
   note <text> [--type t]     Save a note for the current project
   dashboard [--port 4747]    Browse memory in a local web UI
@@ -69,6 +72,16 @@ async function main(): Promise<void> {
     case "dashboard": {
       const { dashboard } = await import("./dashboard.ts");
       await dashboard(args);
+      return;
+    }
+    case "worklog": {
+      const { worklogCommand } = await import("./worklog.ts");
+      try {
+        await worklogCommand(args);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : error);
+        process.exit(1);
+      }
       return;
     }
     case "forget":

@@ -128,3 +128,25 @@ test("serves static files and keeps requests inside the folder", async () => {
     await close();
   }
 });
+
+test("serves the time report as JSON and CSV", async () => {
+  const { base, close } = await start();
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), "tr-noclaude-"));
+  try {
+    const week: any = await getJson(`${base}/api/worklog?range=week`);
+    assert.equal(week.success, true);
+    assert.ok(Array.isArray(week.rows));
+    assert.ok("agent_s" in week.totals);
+
+    const csv = await (await fetch(`${base}/api/worklog.csv?range=today`)).text();
+    assert.match(csv, /^day,project,task,kind/);
+
+    const bad = await fetch(`${base}/api/worklog?range=custom&from=nope`);
+    assert.equal(bad.status, 400);
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    await close();
+  }
+});

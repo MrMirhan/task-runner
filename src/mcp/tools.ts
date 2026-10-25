@@ -17,6 +17,14 @@ export interface ToolContext {
   session: SessionHolder;
   /** Local mode only: lets graph_stats flag `file` entities whose path no longer exists. */
   fileExists?: (projectPath: string, relativePath: string) => boolean;
+  /** Local mode only: reads the agent transcripts on disk and returns time per project and task. */
+  worklog?: (input: {
+    range: string;
+    from?: string;
+    to?: string;
+    project?: string | null;
+    detail?: boolean;
+  }) => Promise<unknown>;
 }
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
@@ -393,6 +401,36 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         };
       }),
   );
+
+  if (ctx.worklog) {
+    const worklog = ctx.worklog;
+    server.registerTool(
+      "worklog",
+      {
+        title: "Time report",
+        description:
+          "How long the user and the agent worked, per project and task (a branch or ticket), for a period. Read from the session transcripts. Use it to answer 'how much time did I spend on X this week' or 'what did I do this week'. Agent time adds up across parallel sessions; wall time counts each minute once.",
+        inputSchema: {
+          range: z.enum(["today", "yesterday", "week", "last-week", "month", "custom"]).optional().describe("Default week (Monday to Sunday)"),
+          from: z.string().optional().describe("YYYY-MM-DD, with range custom"),
+          to: z.string().optional().describe("YYYY-MM-DD, with range custom"),
+          project: z.string().optional().describe("A project key, or 'current'. Default: every project"),
+          detail: z.boolean().optional().describe("Include what was asked and the notes and commits per task"),
+        },
+        annotations: READ,
+      },
+      ({ range, from, to, project, detail }) =>
+        run(() =>
+          worklog({
+            range: range ?? "week",
+            from,
+            to,
+            project: project === "current" ? session.get().project : (project ?? null),
+            detail,
+          }),
+        ),
+    );
+  }
 
   // ─── Tasks ────────────────────────────────────────────
 
