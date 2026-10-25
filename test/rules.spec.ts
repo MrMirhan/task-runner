@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_DOC_CHARS, RulesStore } from "../src/core/rules.ts";
+import { readFileSync } from "node:fs";
+import { MAX_DOC_CHARS, MAX_RESOLVED_CHARS, RulesStore } from "../src/core/rules.ts";
 import { openDb } from "../src/node/sqlite.ts";
 
 function rules() {
@@ -123,4 +124,10 @@ test("devices register once and can be renamed", () => {
   r.renameDevice("d1", "work laptop");
   assert.equal((r.listDevices()[0] as { label: string }).label, "work laptop");
   assert.throws(() => r.renameDevice("nope", "x"), /not found/);
+});
+
+test("the dashboard checks rule length against the same limits as the server", () => {
+  const types = readFileSync(new URL("../dashboard/app/lib/types.ts", import.meta.url), "utf8");
+  assert.match(types, new RegExp(`MAX_DOC_CHARS = ${MAX_DOC_CHARS};`));
+  assert.match(types, new RegExp(`MAX_RESOLVED_CHARS = ${MAX_RESOLVED_CHARS};`));
 });

@@ -268,8 +268,8 @@ export interface Health {
 // Rules (GET/PUT /api/rules/*, /api/devices). Timestamps are unix seconds.
 export type RuleScope = "global" | "device" | "org" | "project" | "project_device";
 
-export const MAX_DOC_CHARS = 4000;
-export const MAX_RESOLVED_CHARS = 8000;
+export const MAX_DOC_CHARS = 8000;
+export const MAX_RESOLVED_CHARS = 16000;
 
 export interface RuleDoc {
   id: string;
