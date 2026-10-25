@@ -54,7 +54,7 @@ A task that stays `running` for 30 minutes is offered again by `get_next_task`.
 
 The user's standing rules arrive at the top of your context ("RULES from the user"). Follow them. Call `rules` with `action: "show"` to see them again.
 
-When the user states a lasting preference ("always...", "from now on...") or corrects you on the same point twice, call `rules` with `action: "propose"`. Pick the narrowest scope that fits (`project` before `org` before `global`), write one short imperative sentence, and give a reason. This only queues the proposal; the user approves it. Tell the user you proposed it. Never propose secrets, one-time instructions, or what the code already shows.
+Preferences the user states or corrections they give go to `taste` (above), which applies them at once. Call `rules` with `action: "propose"` only when the user asks for a standing rule in so many words ("make this a rule", "add a rule"). Pick the narrowest scope that fits (`project` before `org` before `global`), write one short imperative sentence, and give a reason. This only queues the proposal; the user approves it. Tell the user you proposed it. Never propose secrets, one-time instructions, or what the code already shows.
 
 ## Housekeeping
 
