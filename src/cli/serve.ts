@@ -5,6 +5,7 @@ import { createServer } from "../mcp/server.ts";
 import { SessionHolder } from "../mcp/session.ts";
 import { formatDuration, buildReport, resolveRange } from "../worklog/report.ts";
 import { scanWorklog } from "../worklog/scan.ts";
+import { deviceInfo, openRulesClient, resolveForHook } from "../node/remote.ts";
 import { openStore, projectFor } from "./commands.ts";
 import { worklogOptions } from "./worklog.ts";
 
@@ -14,12 +15,43 @@ export async function serve(): Promise<void> {
 
   const session = new SessionHolder(() => {
     const detected = projectFor(store, cwd);
-    return { project: detected.project, project_path: detected.project_path, branch: detected.branch, pr: null };
+    return { project: detected.project, project_path: detected.project_path, branch: detected.branch, pr: null, org: detected.org };
   });
+
+  const device = deviceInfo();
+  const rulesClient = openRulesClient(db);
+  void rulesClient.registerDevice(device).catch(() => undefined);
 
   const server = createServer({
     store,
     session,
+    rules: {
+      async show() {
+        const s = session.get();
+        const resolved = await rulesClient.resolve({ project: s.project, org: s.org, device: device.id }).catch(async (error) => {
+          const fallback = await resolveForHook(rulesClient, { project: s.project, org: s.org, device: device.id });
+          if (!fallback.text) throw error;
+          return { text: fallback.text, parts: [], pending: 0, chars: fallback.text.length, truncated: false, stale: true };
+        });
+        return { text: resolved.text, parts: resolved.parts, pending: resolved.pending, stale: "stale" in resolved };
+      },
+      async propose(input) {
+        const s = session.get();
+        const scope = input.scope as "global" | "device" | "org" | "project" | "project_device";
+        const made = await rulesClient.propose({
+          key: {
+            scope,
+            ref: scope === "org" ? (input.ref ?? s.org) : scope === "project" || scope === "project_device" ? (input.ref ?? s.project) : null,
+            device: scope === "device" || scope === "project_device" ? device.id : null,
+          },
+          mode: input.mode,
+          text: input.text,
+          reason: input.reason,
+          author: "agent",
+        });
+        return { id: made.id, scope: made.scope };
+      },
+    },
     fileExists: (root, relative) => existsSync(resolve(root, relative)),
     worklog: async (input) => {
       const range = resolveRange({

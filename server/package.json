@@ -1,0 +1,15 @@
+{
+  "name": "task-runner-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261019.1",
+    "typescript": "~5.9.0",
+    "wrangler": "^4.152.0"
+  }
+}

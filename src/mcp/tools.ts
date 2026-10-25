@@ -17,6 +17,11 @@ export interface ToolContext {
   session: SessionHolder;
   /** Local mode only: lets graph_stats flag `file` entities whose path no longer exists. */
   fileExists?: (projectPath: string, relativePath: string) => boolean;
+  /** Reads and proposes the user's rules (local database or the server). */
+  rules?: {
+    show(): Promise<{ text: string; parts: Array<{ label: string; chars: number }>; pending: number; stale: boolean; error?: string }>;
+    propose(input: { scope: string; text: string; mode?: string; reason?: string; ref?: string }): Promise<{ id: string; scope: string }>;
+  };
   /** Local mode only: reads the agent transcripts on disk and returns time per project and task. */
   worklog?: (input: {
     range: string;
@@ -108,6 +113,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             project_path: project_path ?? (sameAsDetected ? detected?.project_path : null) ?? null,
             branch: branch ?? (sameAsDetected ? detected?.branch : null) ?? null,
             pr: pr ?? null,
+            org: detected?.org ?? null,
           };
         } else if (detected) {
           next = { ...detected, branch: branch ?? detected.branch, pr: pr ?? null };
@@ -233,22 +239,26 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     {
       title: "Remember",
       description:
-        "Create or update a knowledge-graph entity and add facts to it (an existing name is extended, duplicates are skipped). One fact per item, under 1000 characters; the name stays short. Scope 'global' is for facts about the user that hold in every project.",
+        "Create or update a knowledge-graph entity and add facts to it (an existing name is extended, duplicates are skipped). One fact per item, under 1000 characters; the name stays short. Add keywords so later searches find it. Entities named in the facts are linked automatically, and facts that seem to contradict a stored one come back as possible_conflicts. Scope 'global' is for facts about the user that hold in every project.",
       inputSchema: {
         name: z.string().max(80, "Use a short name (up to 80 characters); put the sentence in observations"),
         entity_type: entityType.optional().describe("Default concept"),
         observations: z.array(z.string()).optional().describe("Facts about the entity"),
+        keywords: z
+          .array(z.string())
+          .optional()
+          .describe("Other words a later search might use: synonyms, abbreviations, the term in the user's language. Search has no meaning-based matching, so these matter"),
         summary: z.string().optional(),
         importance: z.number().min(0).max(1).optional().describe("0-1; defaults by type (pitfall .8, convention .75, decision .7 ... file .4)"),
         scope: z.enum(["project", "global"]).optional(),
       },
       annotations: WRITE,
     },
-    ({ name, entity_type, observations, summary, importance, scope }) =>
+    ({ name, entity_type, observations, keywords, summary, importance, scope }) =>
       run(async () => {
         const project = scope === "global" ? GLOBAL_PROJECT : session.get().project;
         return store.upsertEntity({
-          project, name, entity_type: entity_type ?? "concept", summary, importance, observations,
+          project, name, entity_type: entity_type ?? "concept", summary, importance, observations, keywords,
         });
       }),
   );
@@ -272,7 +282,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     "link",
     {
       title: "Link entities",
-      description: "Connect two existing entities. Types are needed only when a name matches more than one entity.",
+      description: "Connect two existing entities, or with remove: true disconnect them. Types are needed only when a name matches more than one entity.",
       inputSchema: {
         from: z.string().describe("Source entity name"),
         to: z.string().describe("Target entity name"),
@@ -280,11 +290,15 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         from_type: entityType.optional(),
         to_type: entityType.optional(),
         context: z.string().optional().describe("Why they are related"),
+        remove: z.boolean().optional().describe("Remove the link instead (all types unless relation is given)"),
       },
       annotations: { ...WRITE, idempotentHint: true },
     },
-    ({ from, to, relation, from_type, to_type, context }) =>
+    ({ from, to, relation, from_type, to_type, context, remove }) =>
       run(async () => {
+        if (remove) {
+          return store.unlink({ project: session.get().project, from_name: from, from_type, to_name: to, to_type, relation_type: relation });
+        }
         try {
           return await store.link({
             project: session.get().project,
@@ -305,7 +319,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     {
       title: "Recall",
       description:
-        "Search memory by keywords (diacritics-insensitive, prefix-matched, any language): graph entities with their dated facts, plus matching notes. Includes global facts. Start work with this.",
+        "Search memory by keywords: graph entities with their dated facts, linked entities as related, and matching notes. Matching ignores accents, finds word starts and stems, and falls back to parts of words; it is not meaning-based, so search with the words, synonyms and both languages the facts would use. Includes global facts. Start work with this.",
       inputSchema: {
         query: z.string(),
         entity_type: entityType.optional(),
@@ -320,6 +334,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         const found = await store.recall({ project: s.project, q: query, entity_type, limit, all_projects });
         return {
           entities: found.entities.map((e) => shapeEntity(e, s)),
+          related: found.related.length ? found.related.map((r) => `${r.name} (${r.entity_type}) ${r.relation} ${r.via}`) : undefined,
           notes: found.entries.map((e) => ({
             id: e.id, type: e.type, title: e.title, snippet: e.content, at: day(e.created_at),
             ...(e.project_key !== s.project ? { project: e.project_key } : {}),
@@ -401,6 +416,45 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         };
       }),
   );
+
+  if (ctx.rules) {
+    const rules = ctx.rules;
+    server.registerTool(
+      "rules",
+      {
+        title: "User rules",
+        description:
+          "The user's standing rules for this project, organization and device, as injected at session start. action 'show' returns them. action 'propose' suggests a new or changed rule when the user states a lasting preference or corrects you more than once; it only queues a proposal, and the user approves it in the panel, the web page or the CLI. Never propose secrets, one-off instructions or things the code already shows.",
+        inputSchema: {
+          action: z.enum(["show", "propose"]),
+          scope: z.enum(["global", "device", "org", "project", "project_device"]).optional().describe("For propose. global: everywhere. device: this machine. org: the organization of this repo. project: this project. project_device: this project on this machine."),
+          text: z.string().max(1500).optional().describe("For propose: the rule, short and imperative"),
+          mode: z.enum(["append", "replace"]).optional().describe("For propose. Default append"),
+          reason: z.string().max(400).optional().describe("For propose: why, so the user can judge it"),
+        },
+        annotations: WRITE,
+      },
+      ({ action, scope, text, mode, reason }) =>
+        run(async () => {
+          if (action === "show") {
+            const r = await rules.show();
+            return {
+              rules: r.text || "(none set)",
+              sections: r.parts.map((p) => `${p.label} (${p.chars} chars)`),
+              pending_proposals: r.pending || undefined,
+              note: r.stale ? "Read from the local cache: the server could not be reached." : undefined,
+            };
+          }
+          if (!scope || !text?.trim()) throw new StoreError("invalid", "propose needs scope and text");
+          const made = await rules.propose({ scope, text, mode, reason });
+          return {
+            proposal: made.id,
+            status: "pending",
+            note: "Queued. The user decides: panel (/brain, Rules), the web page, or `task-runner-mcp rules approve " + made.id + "`. It is not active yet.",
+          };
+        }),
+    );
+  }
 
   if (ctx.worklog) {
     const worklog = ctx.worklog;

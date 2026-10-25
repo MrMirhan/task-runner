@@ -26,5 +26,27 @@ export function ftsQuery(input: string): string | null {
   const all = [...new Set(tokens.map((t) => t.toLowerCase()))];
   const content = all.filter((t) => !STOPWORDS.has(t));
   const unique = (content.length > 0 ? content : all).slice(0, 12);
-  return unique.map((t) => (t.length >= 2 ? `"${t}"*` : `"${t}"`)).join(" OR ");
+  const terms = new Set<string>();
+  for (const t of unique) {
+    terms.add(t.length >= 2 ? `"${t}"*` : `"${t}"`);
+    // A shorter stem also matches other inflections: "çalışmaları" finds "çalışma", "deployment" finds "deploying".
+    // Six letters keep the root of most Turkish and English words while dropping the suffix chain.
+    if (t.length >= 7) terms.add(`"${t.slice(0, Math.max(5, Math.min(6, t.length - 2)))}"*`);
+    // A plural in the question still finds the singular that was stored.
+    else if (t.length >= 4 && /[^siu]s$/.test(t)) terms.add(`"${t.slice(0, -1)}"*`);
+  }
+  return [...terms].join(" OR ");
+}
+
+/** Phrases for the trigram index: whole tokens of three or more characters. */
+export function trigramQuery(input: string): string | null {
+  const tokens = fold(input).toLowerCase().match(/[\p{L}\p{N}_]{3,}/gu);
+  if (!tokens) return null;
+  const content = tokens.filter((t) => !STOPWORDS.has(t));
+  return [...new Set(content.length ? content : tokens)].slice(0, 12).map((t) => `"${t}"`).join(" OR ");
+}
+
+/** Lowercased word set used for similarity checks between facts. */
+export function wordSet(text: string): Set<string> {
+  return new Set((fold(text).toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).filter((t) => !STOPWORDS.has(t)));
 }

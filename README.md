@@ -4,7 +4,7 @@ Memory for your coding agent. It remembers decisions, pitfalls and conventions b
 
 Task Runner is one package with four parts:
 
-- an **MCP server** with 17 tools (works in any MCP client),
+- an **MCP server** with up to 19 tools (works in any MCP client),
 - a **Claude Code plugin** that wires the server, a session briefing and a skill together,
 - a **mod** for Claude Code: a live side panel, memory toasts, task progress, reminders and a time report,
 - a **local dashboard** with a graph view.
@@ -29,13 +29,14 @@ You need Node.js 22.13 or newer. Start a new session. The plugin adds:
 
 | Part | What it does |
 | --- | --- |
-| MCP server | The 17 memory, task and time tools. |
+| MCP server | The memory, task, time and rules tools. |
 | Session briefing | At session start, a hook puts the most important facts of the project in the agent's context. The agent does not need to call a tool to get them. |
 | Skill | Tells the agent when and how to use the tools. |
 | Panel (`/brain`) | Tasks, notes and the knowledge graph next to the chat. Updates while the agent works. |
 | `/recall <words>` | Search memory without using a model turn. |
 | `/remember <text>` | Save a note. |
 | `/worklog [week]` | Time spent by you and the agent, per project and task. |
+| `/rules` | Show the rules in force. `/rules approve <id>` and `/rules reject <id>` decide a proposal. |
 | Toasts | Show what the agent remembers, links or forgets. |
 | Progress line | Shows task progress above the prompt while a task group is open. |
 | Commit notes | Saves a short note for each `git commit` the agent makes. No model call. |
@@ -94,6 +95,7 @@ Other clients do not get the briefing, the panel or the slash commands. The tool
 | `graph_stats` | Counts, orphan entities and (with `check`) stale items. |
 | `create_task_group`, `get_next_task`, `complete_task`, `get_task_status`, `clear_tasks` | The task loop. |
 | `worklog` | Time by you and the agent per project and task, for a period. Local install only. |
+| `rules` | Show your standing rules, or propose a new one. The agent cannot change rules; you approve. |
 | `set_context`, `list_projects` | Override or inspect the project. Rarely needed. |
 
 Entity types: `preference`, `decision`, `pattern`, `file`, `concept`, `tool`, `pitfall`, `convention`.
@@ -154,6 +156,61 @@ Settings (flags, or the environment variables in brackets):
 - `worklog pending` lists time not yet reported. After you copy it to a time-tracking system, run `worklog exported <project> <branch>` so it is not reported twice.
 
 The first run reads every transcript of the period and can take a minute for a heavy week. After that only changed files are read. The result is stored in the same local database. Claude Code removes old transcripts after some weeks, so run a report before they go; the stored numbers stay.
+
+## Rules
+
+Standing instructions for the agent, set once, injected at the start of every session. You do not write a `CLAUDE.md` in every repository or on every machine.
+
+| Scope | Applies to |
+| --- | --- |
+| Everywhere | every session |
+| Device | one machine ("use brew", "no GUI here") |
+| Organization | every repository of one owner (the git remote owner, `acme` for `github.com/acme/shop`) |
+| Project | one project |
+| Project on a device | one project on one machine |
+
+The sections arrive in that order. When two disagree, the later one wins. The repository's own `CLAUDE.md` still loads as usual.
+
+```bash
+npx task-runner-mcp rules set "Reply in the language I write in."            # everywhere
+npx task-runner-mcp rules set --org "Commit messages follow Conventional Commits."
+npx task-runner-mcp rules set --project "Never edit the billing module."
+npx task-runner-mcp rules set --device "Use brew, not apt."
+npx task-runner-mcp rules edit --project       # open the document in $EDITOR
+npx task-runner-mcp rules                      # what this folder gets, and from where
+```
+
+A document holds 4,000 characters at most and the sections of one session add up to 8,000. Keep rules short and imperative: they cost tokens in every session.
+
+The agent can read the rules with the `rules` tool and can **propose** a rule when you state a lasting preference or correct it twice. A proposal waits. You approve or reject it in the panel (`/brain`, Rules tab), with `/rules approve <id>`, on the web page, or with `task-runner-mcp rules approve <id>`. Nothing the agent proposes is active before that, because an active rule reaches every future session.
+
+### Several devices: keep the rules on a server
+
+On one machine the rules live in the local database. With several machines, run the small server in `server/` as a Cloudflare Worker. It stores only rules and device names, never your memory or transcripts. Every machine signs in once with the same key; the web page edits the rules for all of them.
+
+```bash
+npm run build:dashboard            # the web page the Worker serves
+cd server && npm install
+npx wrangler deploy                # creates a new Worker named task-runner-rules
+npx wrangler secret put TASK_RUNNER_KEY      # paste a long random key: openssl rand -hex 24
+```
+
+On each machine:
+
+```bash
+npx task-runner-mcp login https://task-runner-rules.<your-subdomain>.workers.dev
+```
+
+The command asks for the key. To keep it out of your shell history do not pass `--key`; type it at the prompt, pipe it in, or set `TASK_RUNNER_REMOTE_KEY`. The key is saved in `~/.task-runner/remote.json` (readable by you only). `task-runner-mcp logout` removes it.
+
+After that the session hook reads the rules from the server. It waits 1.5 seconds at most and then uses the last copy it saved, so a slow network never delays a session. Each machine has an id and a label (the host name; change it with `rules rename-device`). Open the Worker address in a browser, enter the key, and edit the rules for any scope, preview what a project gets on a device, review proposals and rename devices.
+
+Keep in mind:
+
+- The key edits the instructions of every agent on every machine. Make it long and random, keep it out of repositories and rotate it with `wrangler secret put`.
+- The Worker refuses a key shorter than 24 characters. Add Cloudflare rate limiting or Access in front of it if you want more.
+- Rules are stored on Cloudflare. Do not write secrets in them.
+- `login` refuses `http://` addresses other than localhost.
 
 ## Command line
 

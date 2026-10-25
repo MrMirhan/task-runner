@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { StoreApi } from "../core/api.ts";
+import { RulesStore } from "../core/rules.ts";
 import type { Store } from "../core/store.ts";
 import { flag, openStore } from "./commands.ts";
 import { buildReport, renderCsv, resolveRange } from "../worklog/report.ts";
@@ -95,7 +96,7 @@ export function findStaticDir(): string | null {
   return null;
 }
 
-export function createDashboardServer(store: Store, staticDir: string | null): Server {
+export function createDashboardServer(store: Store, staticDir: string | null, rules?: RulesStore): Server {
   return createServer(async (req, res) => {
     try {
       const host = req.headers.host ?? "";
@@ -129,7 +130,7 @@ export function createDashboardServer(store: Store, staticDir: string | null): S
           path: url.pathname.slice("/api".length) || "/",
           query: url.searchParams,
           body,
-        });
+        }, rules);
         return sendJson(res, out.status, out.body);
       }
 
@@ -161,7 +162,7 @@ export function createDashboardServer(store: Store, staticDir: string | null): S
 export async function dashboard(args: string[]): Promise<void> {
   const port = Number(flag(args, "--port") ?? process.env.PORT ?? 4747);
   const { store, db } = openStore();
-  const server = createDashboardServer(store, findStaticDir());
+  const server = createDashboardServer(store, findStaticDir(), new RulesStore(db));
 
   server.on("error", (error: NodeJS.ErrnoException) => {
     console.error(error.code === "EADDRINUSE" ? `Port ${port} is in use. Try --port <other>.` : error.message);

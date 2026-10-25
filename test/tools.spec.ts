@@ -256,3 +256,36 @@ test("the worklog tool exists only when the host can read transcripts", async ()
   assert.equal(JSON.parse(res.content[0].text).totals.you, "1h 00m");
   assert.deepEqual(seen[0], { range: "week", from: undefined, to: undefined, project: "demo", detail: true });
 });
+
+test("the rules tool shows rules and only ever queues proposals", async () => {
+  const { store } = memoryStore();
+  const session = new SessionHolder(() => ({ project: "demo", project_path: "/w", branch: "main", pr: null, org: "acme" }));
+  const proposed: unknown[] = [];
+  const server = createServer({
+    store, session,
+    rules: {
+      show: async () => ({ text: "## Everywhere\nBe brief.", parts: [{ label: "Everywhere", chars: 8 }], pending: 2, stale: false }),
+      propose: async (input) => {
+        proposed.push(input);
+        return { id: "prop_1", scope: input.scope };
+      },
+    },
+  });
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test", version: "0" });
+  await Promise.all([server.connect(a), client.connect(b)]);
+  const call = async (args: Record<string, unknown>) =>
+    JSON.parse(((await client.callTool({ name: "rules", arguments: args })) as { content: Array<{ text: string }> }).content[0].text);
+
+  const shown = await call({ action: "show" });
+  assert.match(shown.rules, /Be brief/);
+  assert.equal(shown.pending_proposals, 2);
+
+  const made = await call({ action: "propose", scope: "org", text: "Use Conventional Commits.", reason: "asked twice" });
+  assert.equal(made.status, "pending");
+  assert.match(made.note, /not active yet/);
+  assert.equal((proposed[0] as { scope: string }).scope, "org");
+
+  const bad = (await client.callTool({ name: "rules", arguments: { action: "propose" } })) as { isError?: boolean };
+  assert.equal(bad.isError, true);
+});

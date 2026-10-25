@@ -9,7 +9,7 @@ Memory that survives sessions (a knowledge graph plus notes) and a task runner. 
 
 ## At session start
 
-A briefing of the most important facts is already in your context. For anything beyond it, call `recall` with a few keywords before you re-derive or re-ask. Search ignores accents and matches word starts, so `calisma` finds `çalışma` and `migrat` finds `migrations`.
+A briefing of the most important facts is already in your context. For anything beyond it, call `recall` with a few keywords before you re-derive or re-ask. Search ignores accents and matches word starts and stems, so `calisma` finds `çalışma` and `migrations` finds `migration`. It does not match meaning: if the first search misses, try synonyms and the other language. `related` lists entities linked to the hits.
 
 ## While you work
 
@@ -29,7 +29,9 @@ Rules that keep the graph useful:
 - Keep the name short (80 characters at most). Put the sentence in `observations`.
 - One fact per item, under 1000 characters. Long text goes in `save_memory`.
 - `remember` on a name that exists adds facts to it. Duplicates are skipped.
-- `remember` returns `similar_existing` when a close match exists: use that entity instead of a new one. It returns `link_suggestions` when your facts name entities that are not linked yet: call `link` for the ones that matter.
+- Give `keywords` with every new entity: synonyms, abbreviations and the term in the user's language ("auth, login, oturum açma"). Search matches words, not meaning, so keywords are what makes a fact findable later.
+- `remember` returns `similar_existing` when a close match exists: use that entity instead of a new one. Entities named in your facts are linked automatically (`auto_linked`); remove a wrong link with `link` and `remove: true`.
+- `possible_conflicts` means a stored fact says something different about the same point. Fix the old one with `correct_fact`.
 - Connect related entities with `link` (`uses`, `depends_on`, `supersedes`, `decided_against`, `relates_to`, ...).
 - A fact is wrong or old: call `correct_fact` with the fact id from `recall` or `what_do_i_know`. Never add a second fact that contradicts the first.
 - Facts show their date. Check old facts against the code before you rely on them. The code wins.
@@ -44,6 +46,12 @@ For three or more dependent steps, split the work:
 3. `get_task_status` shows progress. With `task_id` it returns one task in full.
 
 A task that stays `running` for 30 minutes is offered again by `get_next_task`.
+
+## Rules
+
+The user's standing rules arrive at the top of your context ("RULES from the user"). Follow them. Call `rules` with `action: "show"` to see them again.
+
+When the user states a lasting preference ("always...", "from now on...") or corrects you on the same point twice, call `rules` with `action: "propose"`. Pick the narrowest scope that fits (`project` before `org` before `global`), write one short imperative sentence, and give a reason. This only queues the proposal; the user approves it. Tell the user you proposed it. Never propose secrets, one-time instructions, or what the code already shows.
 
 ## Housekeeping
 

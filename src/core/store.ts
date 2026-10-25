@@ -16,7 +16,7 @@ import {
   STALE_RUNNING_SECONDS,
 } from "./constants.ts";
 import { StoreError, assertIn, required } from "./errors.ts";
-import { fold, foldSql, ftsQuery } from "./fts.ts";
+import { fold, foldSql, ftsQuery, trigramQuery, wordSet } from "./fts.ts";
 import { migrate } from "./schema.ts";
 import type { TaskInput } from "./parser.ts";
 import type { FactRow, MinuteRow } from "../worklog/compute.ts";
@@ -49,8 +49,10 @@ export interface UpsertResult {
   is_new: boolean;
   observations_added: number;
   similar_existing?: Array<{ name: string; entity_type: string }>;
-  /** Existing entities named in the new facts that this entity is not linked to yet. */
-  link_suggestions?: string[];
+  /** Existing entities named in the new facts; linked with relates_to automatically. */
+  auto_linked?: string[];
+  /** Facts already stored that look like the same statement with other numbers or words. */
+  possible_conflicts?: Array<{ id: string; text: string }>;
 }
 
 export interface ExportData {
@@ -71,6 +73,27 @@ function localDayOf(epochSeconds: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+function mergeKeywords(previous: string, added: string[]): string | null {
+  const all = new Set(
+    [...previous.split(","), ...added]
+      .map((k) => k.trim().toLowerCase())
+      .filter((k) => k.length > 0 && k.length <= 60),
+  );
+  return all.size ? [...all].slice(0, 30).join(",") : null;
+}
+
+/** Two facts that share most words but differ in their numbers say different things about the same point. */
+function looksLikeConflict(a: string, b: string): boolean {
+  const wa = wordSet(a);
+  const wb = wordSet(b);
+  if (wa.size < 2 || wb.size < 2) return false;
+  let shared = 0;
+  for (const w of wa) if (wb.has(w)) shared++;
+  const overlap = shared / Math.min(wa.size, wb.size);
+  const numbers = (t: string) => (t.match(/\d+(?:[.,]\d+)?/g) ?? []).join("|");
+  return overlap >= 0.6 && numbers(a) !== numbers(b) && numbers(a) !== "" && numbers(b) !== "";
+}
+
 function clamp(n: number, min: number, max: number): number {
   return Math.min(Math.max(n, min), max);
 }
@@ -83,7 +106,14 @@ export class Store {
     this.db = db;
     this.clock = clock;
     migrate(db);
+    this.hasTrigram = Boolean(db.get("SELECT 1 FROM sqlite_master WHERE name = 'entities_tri'"));
+    if (db.get<{ value: string }>("SELECT value FROM schema_meta WHERE key = 'reindex'")?.value === "1") {
+      this.reindexAll();
+      db.run("DELETE FROM schema_meta WHERE key = 'reindex'");
+    }
   }
+
+  private readonly hasTrigram: boolean;
 
   // ─── Projects ──────────────────────────────────────────
 
@@ -350,6 +380,7 @@ export class Store {
     properties?: unknown;
     importance?: number;
     observations?: string[];
+    keywords?: string[];
   }) {
     const project = required(input.project, "project");
     const name = required(input.name, "name").trim();
@@ -367,8 +398,13 @@ export class Store {
         project, name, type,
       );
       let id: string;
+      const previous = existing
+        ? (this.db.get<{ keywords: string | null }>("SELECT keywords FROM entities WHERE id = ?", existing.id)?.keywords ?? "")
+        : "";
+      const keywords = mergeKeywords(previous, input.keywords ?? []);
       if (existing) {
         id = existing.id;
+        this.db.run("UPDATE entities SET keywords = ? WHERE id = ?", keywords, existing.id);
         this.db.run(
           `UPDATE entities SET summary = COALESCE(?, summary), properties = COALESCE(?, properties),
              importance = COALESCE(?, importance), valid_until = NULL, updated_at = ?, last_accessed = ?
@@ -378,12 +414,12 @@ export class Store {
       } else {
         id = newId("ent");
         this.db.run(
-          `INSERT INTO entities (id, project_key, name, entity_type, summary, properties, importance, last_accessed, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          id, project, name, type, input.summary ?? null, properties, initialImportance, t, t, t,
+          `INSERT INTO entities (id, project_key, name, entity_type, summary, properties, importance, last_accessed, created_at, updated_at, keywords)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, project, name, type, input.summary ?? null, properties, initialImportance, t, t, t, keywords,
         );
       }
-      const added = this.insertFacts(id, input.observations ?? []);
+      const { ids: added, conflicts } = this.insertFacts(id, input.observations ?? []);
       this.indexEntity(id);
       const result: UpsertResult = {
         entity_id: id,
@@ -396,10 +432,17 @@ export class Store {
         const similar = this.similarEntities(project, name, id);
         if (similar.length > 0) result.similar_existing = similar;
       }
-      if (added.length > 0) {
-        const suggestions = this.linkSuggestions(project, id, (input.observations ?? []).concat(input.summary ?? ""));
-        if (suggestions.length > 0) result.link_suggestions = suggestions;
+      if (added.length > 0 || input.summary) {
+        const mentioned = this.mentionedEntities(project, id, (input.observations ?? []).concat(input.summary ?? ""));
+        for (const other of mentioned) {
+          this.db.run(
+            "INSERT OR IGNORE INTO relations (id, source_id, target_id, relation_type, weight, context, created_at) VALUES (?, ?, ?, 'relates_to', 0.5, ?, ?)",
+            newId("rel"), id, other.id, "mentioned in a fact (automatic)", this.clock(),
+          );
+        }
+        if (mentioned.length > 0) result.auto_linked = mentioned.map((m) => m.name);
       }
+      if (conflicts.length > 0) result.possible_conflicts = conflicts;
       return result;
     });
   }
@@ -408,7 +451,7 @@ export class Store {
     if (!input.facts?.length) throw new StoreError("invalid", "facts must contain at least one item");
     const entity = this.resolveEntity(input.project, input.entity_name, input.entity_type);
     return this.db.transaction(() => {
-      const added = this.insertFacts(entity.id, input.facts);
+      const { ids: added } = this.insertFacts(entity.id, input.facts);
       this.db.run("UPDATE entities SET updated_at = ? WHERE id = ?", this.clock(), entity.id);
       this.indexEntity(entity.id);
       return { entity_id: entity.id, added: added.length, skipped_duplicates: input.facts.length - added.length };
@@ -564,42 +607,85 @@ export class Store {
   }
 
   recall(input: { project: string; q: string; entity_type?: string; limit?: number; all_projects?: boolean }) {
-    const match = ftsQuery(required(input.q, "query"));
-    if (!match) return { entities: [], entries: [] };
+    const q = required(input.q, "query");
+    const match = ftsQuery(q);
+    if (!match) return { entities: [], entries: [], related: [] };
 
     const limit = clamp(Math.floor(input.limit ?? 10), 1, MAX_RECALL_RESULTS);
-    const values: SqlValue[] = [match];
+    const scope: SqlValue[] = [];
     let filter = "e.valid_until IS NULL";
     if (!input.all_projects) {
       filter += " AND e.project_key IN (?, ?)";
-      values.push(required(input.project, "project"), GLOBAL_PROJECT);
+      scope.push(required(input.project, "project"), GLOBAL_PROJECT);
     }
     if (input.entity_type) {
       filter += " AND e.entity_type = ?";
-      values.push(assertIn(input.entity_type, ENTITY_TYPES, "entity_type"));
+      scope.push(assertIn(input.entity_type, ENTITY_TYPES, "entity_type"));
     }
+    const cols = ENTITY_COLS.split(", ").map((c) => `e.${c}`).join(", ");
 
-    const candidates = this.db.all<Row & { rank: number }>(
-      `SELECT ${ENTITY_COLS.split(", ").map((c) => `e.${c}`).join(", ")}, bm25(entities_fts, 8.0, 3.0, 1.0) AS rank
+    const words = this.db.all<Row & { rank: number }>(
+      `SELECT ${cols}, bm25(entities_fts, 8.0, 5.0, 3.0, 1.0) AS rank
        FROM entities_fts JOIN entities e ON e.seq = entities_fts.rowid
        WHERE entities_fts MATCH ? AND ${filter}
        ORDER BY rank LIMIT ?`,
-      ...values, limit * 3,
+      match, ...scope, limit * 3,
     );
+    const relevance = new Map<string, number>();
+    const best = Math.min(...words.map((c) => c.rank), -1e-9);
+    for (const c of words) relevance.set(c.id as string, c.rank / best);
+
+    // Few word hits: look inside words too (parts, typos, inflections the stems missed), at a discount.
+    let candidates: Row[] = words;
+    const tri = this.hasTrigram && words.length < limit ? trigramQuery(q) : null;
+    if (tri) {
+      const parts = this.db.all<Row & { rank: number }>(
+        `SELECT ${cols}, bm25(entities_tri) AS rank
+         FROM entities_tri JOIN entities e ON e.seq = entities_tri.rowid
+         WHERE entities_tri MATCH ? AND ${filter}
+         ORDER BY rank LIMIT ?`,
+        tri, ...scope, limit * 2,
+      );
+      const bestTri = Math.min(...parts.map((c) => c.rank), -1e-9);
+      for (const c of parts) {
+        if (relevance.has(c.id as string)) continue;
+        relevance.set(c.id as string, 0.5 * (c.rank / bestTri));
+        candidates = [...candidates, c];
+      }
+    }
 
     const now = this.clock();
-    const best = Math.min(...candidates.map((c) => c.rank), -1e-9);
     const scored: Array<Row & { score: number }> = candidates.map((c) => {
-      const relevance = best === 0 ? 1 : c.rank / best;
       const ageDays = Math.max(0, (now - (c.last_accessed as number)) / 86400);
       const accessBoost = 1 + 0.1 * Math.log((c.access_count as number) + 1);
       const importance = Math.min(1, (c.importance as number) * Math.pow(0.5, ageDays / IMPORTANCE_HALF_LIFE_DAYS) * accessBoost);
       const recency = 1 / (1 + ageDays / 7);
       const { rank: _rank, ...entity } = c;
-      return { ...entity, score: Number((relevance * 0.55 + importance * 0.3 + recency * 0.15).toFixed(4)) };
+      return { ...entity, score: (relevance.get(c.id as string) ?? 0) * 0.55 + importance * 0.3 + recency * 0.15 };
     });
+
+    // The graph votes: an entity linked to one of the strongest hits moves up, and strong neighbours
+    // that the words missed come back as "related".
     scored.sort((a, b) => b.score - a.score);
-    const top = scored.slice(0, limit);
+    const anchors = scored.slice(0, 5);
+    const byId = new Map(scored.map((e) => [e.id as string, e]));
+    const related = new Map<string, { name: string; entity_type: string; relation: string; via: string }>();
+    for (const anchor of anchors) {
+      for (const n of this.db.all<{ id: string; name: string; entity_type: string; relation_type: string; weight: number; project_key: string }>(
+        `SELECT e.id, e.name, e.entity_type, e.project_key, r.relation_type, r.weight
+         FROM relations r JOIN entities e ON e.id = CASE WHEN r.source_id = ? THEN r.target_id ELSE r.source_id END
+         WHERE (r.source_id = ? OR r.target_id = ?) AND r.valid_until IS NULL AND e.valid_until IS NULL`,
+        anchor.id as string, anchor.id as string, anchor.id as string,
+      )) {
+        const inList = byId.get(n.id);
+        if (inList && inList !== anchor) inList.score += 0.08 * Math.min(1, n.weight);
+        else if (!inList && (input.all_projects || n.project_key === input.project || n.project_key === GLOBAL_PROJECT)) {
+          if (!related.has(n.id)) related.set(n.id, { name: n.name, entity_type: n.entity_type, relation: n.relation_type, via: anchor.name as string });
+        }
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const top: Array<Row & { score: number }> = scored.slice(0, limit).map((e) => ({ ...e, score: Number(e.score.toFixed(4)) }));
 
     const entities: Array<Row & { score: number; observations: Row[] }> = top.map((e) => ({
       ...e,
@@ -621,7 +707,28 @@ export class Store {
       ...entryValues,
     );
 
-    return { entities, entries };
+    return { entities, entries, related: [...related.values()].slice(0, 6) };
+  }
+
+  /** Removes the links between two entities, of one type or all. */
+  unlink(input: { project: string; from_name: string; from_type?: string; to_name: string; to_type?: string; relation_type?: string }) {
+    const from = this.resolveEntity(input.project, input.from_name, input.from_type);
+    const to = this.resolveEntity(input.project, input.to_name, input.to_type);
+    const values: SqlValue[] = [this.clock(), from.id, to.id, to.id, from.id];
+    let typeFilter = "";
+    if (input.relation_type) {
+      typeFilter = " AND relation_type = ?";
+      values.push(assertIn(input.relation_type, RELATION_TYPES, "relation_type"));
+    }
+    const before = this.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM relations WHERE valid_until IS NULL AND ((source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?))${typeFilter}`,
+      ...values.slice(1),
+    )?.n ?? 0;
+    this.db.run(
+      `UPDATE relations SET valid_until = ? WHERE valid_until IS NULL AND ((source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?))${typeFilter}`,
+      ...values,
+    );
+    return { removed: before, from: from.name, to: to.name };
   }
 
   graphAll(project: string) {
@@ -1128,6 +1235,7 @@ export class Store {
     this.db.transaction(() => {
       this.db.run("DELETE FROM entries_fts");
       this.db.run("DELETE FROM entities_fts");
+      if (this.hasTrigram) this.db.run("DELETE FROM entities_tri");
       this.db.run(
         `INSERT INTO entries_fts(rowid, title, content, tags)
          SELECT seq, ${foldSql("title")}, ${foldSql("content")}, ${foldSql("COALESCE(tags, '')")} FROM entries`,
@@ -1152,24 +1260,32 @@ export class Store {
   }
 
   private indexEntity(id: string): void {
-    const e = this.db.get<{ seq: number; name: string; summary: string | null; valid_until: number | null }>(
-      "SELECT seq, name, summary, valid_until FROM entities WHERE id = ?",
+    const e = this.db.get<{ seq: number; name: string; summary: string | null; keywords: string | null; valid_until: number | null }>(
+      "SELECT seq, name, summary, keywords, valid_until FROM entities WHERE id = ?",
       id,
     );
     if (!e) return;
     this.db.run("DELETE FROM entities_fts WHERE rowid = ?", e.seq);
+    if (this.hasTrigram) this.db.run("DELETE FROM entities_tri WHERE rowid = ?", e.seq);
     if (e.valid_until !== null) return;
     const facts = this.db.get<{ facts: string | null }>(
       "SELECT group_concat(content, char(10)) AS facts FROM observations WHERE entity_id = ? AND valid_until IS NULL",
       id,
-    );
+    )?.facts ?? "";
+    const keywords = (e.keywords ?? "").replace(/,/g, " ");
     this.db.run(
-      "INSERT INTO entities_fts(rowid, name, summary, facts) VALUES (?, ?, ?, ?)",
-      e.seq, fold(e.name), fold(e.summary ?? ""), fold(facts?.facts ?? ""),
+      "INSERT INTO entities_fts(rowid, name, keywords, summary, facts) VALUES (?, ?, ?, ?, ?)",
+      e.seq, fold(e.name), fold(keywords), fold(e.summary ?? ""), fold(facts),
     );
+    if (this.hasTrigram) {
+      this.db.run(
+        "INSERT INTO entities_tri(rowid, body) VALUES (?, ?)",
+        e.seq, fold([e.name, keywords, e.summary ?? "", facts].join(" ")).toLowerCase(),
+      );
+    }
   }
 
-  private linkSuggestions(project: string, entityId: string, texts: string[]): string[] {
+  private mentionedEntities(project: string, entityId: string, texts: string[]): Array<{ id: string; name: string }> {
     const haystack = texts.join(" \n ").toLowerCase();
     if (haystack.trim().length < 4) return [];
     const linked = new Set(
@@ -1181,7 +1297,7 @@ export class Store {
         )
         .map((r) => r.other),
     );
-    const out: string[] = [];
+    const out: Array<{ id: string; name: string }> = [];
     for (const e of this.db.all<{ id: string; name: string }>(
       "SELECT id, name FROM entities WHERE project_key IN (?, ?) AND valid_until IS NULL AND id <> ? ORDER BY importance DESC LIMIT 500",
       project, GLOBAL_PROJECT, entityId,
@@ -1194,8 +1310,8 @@ export class Store {
       const after = haystack[at + needle.length];
       const isWord = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
       if (isWord(before) || isWord(after)) continue;
-      out.push(e.name);
-      if (out.length === 3) break;
+      out.push(e);
+      if (out.length === 5) break;
     }
     return out;
   }
@@ -1207,14 +1323,19 @@ export class Store {
       `SELECT e.name, e.entity_type
        FROM entities_fts JOIN entities e ON e.seq = entities_fts.rowid
        WHERE entities_fts MATCH ? AND e.project_key IN (?, ?) AND e.valid_until IS NULL AND e.id <> ?
-       ORDER BY bm25(entities_fts, 8.0, 3.0, 0.0) LIMIT 3`,
+       ORDER BY bm25(entities_fts, 8.0, 4.0, 3.0, 0.0) LIMIT 3`,
       match, project, GLOBAL_PROJECT, excludeId,
     );
   }
 
-  private insertFacts(entityId: string, facts: string[]): string[] {
+  private insertFacts(entityId: string, facts: string[]): { ids: string[]; conflicts: Array<{ id: string; text: string }> } {
     const ids: string[] = [];
+    const conflicts: Array<{ id: string; text: string }> = [];
     const seen = new Set<string>();
+    const existing = this.db.all<{ id: string; content: string }>(
+      "SELECT id, content FROM observations WHERE entity_id = ? AND valid_until IS NULL",
+      entityId,
+    );
     for (const raw of facts) {
       const fact = raw.trim();
       if (fact.length > MAX_FACT_LENGTH) {
@@ -1225,16 +1346,15 @@ export class Store {
       }
       if (!fact || seen.has(fact.toLowerCase())) continue;
       seen.add(fact.toLowerCase());
-      const dup = this.db.get(
-        "SELECT 1 FROM observations WHERE entity_id = ? AND valid_until IS NULL AND content = ? COLLATE NOCASE",
-        entityId, fact,
-      );
-      if (dup) continue;
+      if (existing.some((e) => e.content.toLowerCase() === fact.toLowerCase())) continue;
+      for (const other of existing) {
+        if (looksLikeConflict(fact, other.content)) conflicts.push({ id: other.id, text: other.content });
+      }
       const id = newId("obs");
       this.db.run("INSERT INTO observations (id, entity_id, content, created_at) VALUES (?, ?, ?, ?)", id, entityId, fact, this.clock());
       ids.push(id);
     }
-    return ids;
+    return { ids, conflicts: conflicts.slice(0, 5) };
   }
 
   private facts(entityId: string, limit: number): Row[] {

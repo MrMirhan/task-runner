@@ -6407,12 +6407,12 @@ var init_stdio2 = __esm({
         this.onclose?.();
       }
       send(message) {
-        return new Promise((resolve5) => {
+        return new Promise((resolve6) => {
           const json = serializeMessage(message);
           if (this._stdout.write(json)) {
-            resolve5();
+            resolve6();
           } else {
-            this._stdout.once("drain", resolve5);
+            this._stdout.once("drain", resolve6);
           }
         });
       }
@@ -12933,7 +12933,7 @@ var init_protocol = __esm({
               return;
             }
             const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-            await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+            await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
             options?.signal?.throwIfAborted();
           }
         } catch (error2) {
@@ -12950,7 +12950,7 @@ var init_protocol = __esm({
        */
       request(request, resultSchema, options) {
         const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-        return new Promise((resolve5, reject) => {
+        return new Promise((resolve6, reject) => {
           const earlyReject = (error2) => {
             reject(error2);
           };
@@ -13028,7 +13028,7 @@ var init_protocol = __esm({
               if (!parseResult.success) {
                 reject(parseResult.error);
               } else {
-                resolve5(parseResult.data);
+                resolve6(parseResult.data);
               }
             } catch (error2) {
               reject(error2);
@@ -13289,12 +13289,12 @@ var init_protocol = __esm({
           }
         } catch {
         }
-        return new Promise((resolve5, reject) => {
+        return new Promise((resolve6, reject) => {
           if (signal.aborted) {
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
             return;
           }
-          const timeoutId = setTimeout(resolve5, interval);
+          const timeoutId = setTimeout(resolve6, interval);
           signal.addEventListener("abort", () => {
             clearTimeout(timeoutId);
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -15100,7 +15100,7 @@ var require_code2 = __commonJS({
       return allSchemaProperties(schemaMap).filter((p) => !(0, util_1.alwaysValidSchema)(it, schemaMap[p]));
     }
     exports.schemaProperties = schemaProperties;
-    function callValidateCode({ schemaCode, data, it: { gen, topSchemaRef, schemaPath, errorPath }, it }, func, context, passSchema) {
+    function callValidateCode({ schemaCode, data, it: { gen, topSchemaRef, schemaPath, errorPath }, it }, func, context2, passSchema) {
       const dataAndSchema = passSchema ? (0, codegen_1._)`${schemaCode}, ${data}, ${topSchemaRef}${schemaPath}` : data;
       const valCxt = [
         [names_1.default.instancePath, (0, codegen_1.strConcat)(names_1.default.instancePath, errorPath)],
@@ -15111,7 +15111,7 @@ var require_code2 = __commonJS({
       if (it.opts.dynamicRef)
         valCxt.push([names_1.default.dynamicAnchors, names_1.default.dynamicAnchors]);
       const args = (0, codegen_1._)`${dataAndSchema}, ${gen.object(...valCxt)}`;
-      return context !== codegen_1.nil ? (0, codegen_1._)`${func}.call(${context}, ${args})` : (0, codegen_1._)`${func}(${args})`;
+      return context2 !== codegen_1.nil ? (0, codegen_1._)`${func}.call(${context2}, ${args})` : (0, codegen_1._)`${func}(${args})`;
     }
     exports.callValidateCode = callValidateCode;
     var newRegExp = (0, codegen_1._)`new RegExp`;
@@ -16321,7 +16321,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve5.call(this, root, ref);
+      let _sch = resolve6.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -16348,7 +16348,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve5(root, ref) {
+    function resolve6(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -16923,7 +16923,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve5(baseURI, relativeURI, options) {
+    function resolve6(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -17150,7 +17150,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve5,
+      resolve: resolve6,
       resolveComponent,
       equal,
       serialize,
@@ -17488,8 +17488,8 @@ var require_core = __commonJS({
             return this;
           }
           case "object": {
-            const cacheKey = schemaKeyRef;
-            this._cache.delete(cacheKey);
+            const cacheKey2 = schemaKeyRef;
+            this._cache.delete(cacheKey2);
             let id = schemaKeyRef[this.opts.schemaId];
             if (id) {
               id = (0, resolve_1.normalizeId)(id);
@@ -17565,7 +17565,7 @@ var require_core = __commonJS({
       errorsText(errors = this.errors, { separator = ", ", dataVar = "data" } = {}) {
         if (!errors || errors.length === 0)
           return "No errors";
-        return errors.map((e) => `${dataVar}${e.instancePath} ${e.message}`).reduce((text2, msg) => text2 + separator + msg);
+        return errors.map((e) => `${dataVar}${e.instancePath} ${e.message}`).reduce((text3, msg) => text3 + separator + msg);
       }
       $dataMetaSchema(metaSchema, keywordsJsonPointers) {
         const rules = this.RULES.all;
@@ -21132,7 +21132,7 @@ var init_mcp = __esm({
         let task = createTaskResult.task;
         const pollInterval = task.pollInterval ?? 5e3;
         while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-          await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+          await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
           const updatedTask = await extra.taskStore.getTask(taskId);
           if (!updatedTask) {
             throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -21738,7 +21738,8 @@ function registerTools(server, ctx) {
           project,
           project_path: project_path ?? (sameAsDetected ? detected?.project_path : null) ?? null,
           branch: branch ?? (sameAsDetected ? detected?.branch : null) ?? null,
-          pr: pr ?? null
+          pr: pr ?? null,
+          org: detected?.org ?? null
         };
       } else if (detected) {
         next = { ...detected, branch: branch ?? detected.branch, pr: pr ?? null };
@@ -21850,18 +21851,19 @@ function registerTools(server, ctx) {
     "remember",
     {
       title: "Remember",
-      description: "Create or update a knowledge-graph entity and add facts to it (an existing name is extended, duplicates are skipped). One fact per item, under 1000 characters; the name stays short. Scope 'global' is for facts about the user that hold in every project.",
+      description: "Create or update a knowledge-graph entity and add facts to it (an existing name is extended, duplicates are skipped). One fact per item, under 1000 characters; the name stays short. Add keywords so later searches find it. Entities named in the facts are linked automatically, and facts that seem to contradict a stored one come back as possible_conflicts. Scope 'global' is for facts about the user that hold in every project.",
       inputSchema: {
         name: external_exports.string().max(80, "Use a short name (up to 80 characters); put the sentence in observations"),
         entity_type: entityType.optional().describe("Default concept"),
         observations: external_exports.array(external_exports.string()).optional().describe("Facts about the entity"),
+        keywords: external_exports.array(external_exports.string()).optional().describe("Other words a later search might use: synonyms, abbreviations, the term in the user's language. Search has no meaning-based matching, so these matter"),
         summary: external_exports.string().optional(),
         importance: external_exports.number().min(0).max(1).optional().describe("0-1; defaults by type (pitfall .8, convention .75, decision .7 ... file .4)"),
         scope: external_exports.enum(["project", "global"]).optional()
       },
       annotations: WRITE
     },
-    ({ name, entity_type, observations, summary, importance, scope }) => run(async () => {
+    ({ name, entity_type, observations, keywords, summary, importance, scope }) => run(async () => {
       const project = scope === "global" ? GLOBAL_PROJECT : session.get().project;
       return store.upsertEntity({
         project,
@@ -21869,7 +21871,8 @@ function registerTools(server, ctx) {
         entity_type: entity_type ?? "concept",
         summary,
         importance,
-        observations
+        observations,
+        keywords
       });
     })
   );
@@ -21890,18 +21893,22 @@ function registerTools(server, ctx) {
     "link",
     {
       title: "Link entities",
-      description: "Connect two existing entities. Types are needed only when a name matches more than one entity.",
+      description: "Connect two existing entities, or with remove: true disconnect them. Types are needed only when a name matches more than one entity.",
       inputSchema: {
         from: external_exports.string().describe("Source entity name"),
         to: external_exports.string().describe("Target entity name"),
         relation: external_exports.enum(RELATION_TYPES).optional().describe("Default relates_to"),
         from_type: entityType.optional(),
         to_type: entityType.optional(),
-        context: external_exports.string().optional().describe("Why they are related")
+        context: external_exports.string().optional().describe("Why they are related"),
+        remove: external_exports.boolean().optional().describe("Remove the link instead (all types unless relation is given)")
       },
       annotations: { ...WRITE, idempotentHint: true }
     },
-    ({ from, to, relation, from_type, to_type, context }) => run(async () => {
+    ({ from, to, relation, from_type, to_type, context: context2, remove }) => run(async () => {
+      if (remove) {
+        return store.unlink({ project: session.get().project, from_name: from, from_type, to_name: to, to_type, relation_type: relation });
+      }
       try {
         return await store.link({
           project: session.get().project,
@@ -21910,7 +21917,7 @@ function registerTools(server, ctx) {
           to_name: to,
           to_type,
           relation_type: relation ?? "relates_to",
-          context
+          context: context2
         });
       } catch (error2) {
         if (error2 instanceof StoreError && error2.code === "not_found") {
@@ -21924,7 +21931,7 @@ function registerTools(server, ctx) {
     "recall",
     {
       title: "Recall",
-      description: "Search memory by keywords (diacritics-insensitive, prefix-matched, any language): graph entities with their dated facts, plus matching notes. Includes global facts. Start work with this.",
+      description: "Search memory by keywords: graph entities with their dated facts, linked entities as related, and matching notes. Matching ignores accents, finds word starts and stems, and falls back to parts of words; it is not meaning-based, so search with the words, synonyms and both languages the facts would use. Includes global facts. Start work with this.",
       inputSchema: {
         query: external_exports.string(),
         entity_type: entityType.optional(),
@@ -21938,6 +21945,7 @@ function registerTools(server, ctx) {
       const found = await store.recall({ project: s.project, q: query, entity_type, limit, all_projects });
       return {
         entities: found.entities.map((e) => shapeEntity(e, s)),
+        related: found.related.length ? found.related.map((r) => `${r.name} (${r.entity_type}) ${r.relation} ${r.via}`) : void 0,
         notes: found.entries.map((e) => ({
           id: e.id,
           type: e.type,
@@ -22018,6 +22026,42 @@ function registerTools(server, ctx) {
       };
     })
   );
+  if (ctx.rules) {
+    const rules = ctx.rules;
+    server.registerTool(
+      "rules",
+      {
+        title: "User rules",
+        description: "The user's standing rules for this project, organization and device, as injected at session start. action 'show' returns them. action 'propose' suggests a new or changed rule when the user states a lasting preference or corrects you more than once; it only queues a proposal, and the user approves it in the panel, the web page or the CLI. Never propose secrets, one-off instructions or things the code already shows.",
+        inputSchema: {
+          action: external_exports.enum(["show", "propose"]),
+          scope: external_exports.enum(["global", "device", "org", "project", "project_device"]).optional().describe("For propose. global: everywhere. device: this machine. org: the organization of this repo. project: this project. project_device: this project on this machine."),
+          text: external_exports.string().max(1500).optional().describe("For propose: the rule, short and imperative"),
+          mode: external_exports.enum(["append", "replace"]).optional().describe("For propose. Default append"),
+          reason: external_exports.string().max(400).optional().describe("For propose: why, so the user can judge it")
+        },
+        annotations: WRITE
+      },
+      ({ action, scope, text: text3, mode, reason }) => run(async () => {
+        if (action === "show") {
+          const r = await rules.show();
+          return {
+            rules: r.text || "(none set)",
+            sections: r.parts.map((p) => `${p.label} (${p.chars} chars)`),
+            pending_proposals: r.pending || void 0,
+            note: r.stale ? "Read from the local cache: the server could not be reached." : void 0
+          };
+        }
+        if (!scope || !text3?.trim()) throw new StoreError("invalid", "propose needs scope and text");
+        const made = await rules.propose({ scope, text: text3, mode, reason });
+        return {
+          proposal: made.id,
+          status: "pending",
+          note: "Queued. The user decides: panel (/brain, Rules), the web page, or `task-runner-mcp rules approve " + made.id + "`. It is not active yet."
+        };
+      })
+    );
+  }
   if (ctx.worklog) {
     const worklog = ctx.worklog;
     server.registerTool(
@@ -22149,8 +22193,8 @@ var init_tools = __esm({
       content: [{ type: "text", text: JSON.stringify({ error: message }) }]
     });
     day = (seconds) => typeof seconds === "number" ? new Date(seconds * 1e3).toISOString().slice(0, 10) : void 0;
-    clip = (text2, max) => {
-      const value = String(text2 ?? "");
+    clip = (text3, max) => {
+      const value = String(text3 ?? "");
       return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value;
     };
     fact = (f) => ({ id: f.id, text: f.content, at: day(f.created_at) });
@@ -22238,7 +22282,7 @@ function computeWorklog(events, resolvers, options = DEFAULT_OPTIONS) {
   }
   const firstFocus = focusAt.find((f) => f !== null) ?? null;
   const index = new Map(sorted.map((e, i) => [e, i]));
-  const scopeOf = (e) => {
+  const scopeOf2 = (e) => {
     const here = resolvers.cwd(e.cwd);
     if (here.isRepo) return { project: here.project, branch: normalizeBranch(e.branch) };
     const followed = focusAt[index.get(e) ?? 0] ?? firstFocus;
@@ -22260,7 +22304,7 @@ function computeWorklog(events, resolvers, options = DEFAULT_OPTIONS) {
     }
   };
   const fact2 = (e) => {
-    const scope = scopeOf(e);
+    const scope = scopeOf2(e);
     const day4 = localDay(e.t);
     const key = `${day4}|${scope.project}|${scope.branch}`;
     let row = facts.get(key);
@@ -22284,9 +22328,9 @@ function computeWorklog(events, resolvers, options = DEFAULT_OPTIONS) {
     if (gap <= 0) continue;
     if (current.kind === "system") continue;
     if (current.kind === "prompt") {
-      addSeconds(current.t, Math.min(gap, options.humanCapSeconds), "human", scopeOf(previous), current.sessionId);
+      addSeconds(current.t, Math.min(gap, options.humanCapSeconds), "human", scopeOf2(previous), current.sessionId);
     } else {
-      addSeconds(current.t, Math.min(gap, options.aiCapSeconds), "ai", scopeOf(current), current.sessionId);
+      addSeconds(current.t, Math.min(gap, options.aiCapSeconds), "ai", scopeOf2(current), current.sessionId);
     }
   }
   return { minutes: [...minutes.values()], facts: [...facts.values()] };
@@ -22314,9 +22358,9 @@ var init_compute = __esm({
 function startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
-function parseDay(text2) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text2);
-  if (!m) throw new Error(`Invalid date '${text2}'. Use YYYY-MM-DD.`);
+function parseDay(text3) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text3);
+  if (!m) throw new Error(`Invalid date '${text3}'. Use YYYY-MM-DD.`);
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 function resolveRange(flags, now = /* @__PURE__ */ new Date()) {
@@ -22483,10 +22527,10 @@ var init_report = __esm({
       const pad2 = (n) => String(n).padStart(2, "0");
       return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     };
-    pad = (text2, width, right = false) => right ? text2.padStart(width) : text2.length > width ? `${text2.slice(0, width - 1)}\u2026` : text2.padEnd(width);
+    pad = (text3, width, right = false) => right ? text3.padStart(width) : text3.length > width ? `${text3.slice(0, width - 1)}\u2026` : text3.padEnd(width);
     csvCell = (value) => {
-      const text2 = String(value ?? "");
-      return /[",\n]/.test(text2) ? `"${text2.replace(/"/g, '""')}"` : text2;
+      const text3 = String(value ?? "");
+      return /[",\n]/.test(text3) ? `"${text3.replace(/"/g, '""')}"` : text3;
     };
   }
 });
@@ -22512,12 +22556,17 @@ function keyFromRemote(url) {
   if (parts.length < 2) return null;
   return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`.toLowerCase();
 }
-function pinnedProject(root) {
+function ownerFromRemote(url) {
+  const parts = url.trim().replace(/\.git$/, "").split(/[/:]+/).filter(Boolean);
+  return parts.length >= 2 ? parts[parts.length - 2].toLowerCase() : null;
+}
+function pinned(root) {
   try {
     const parsed = JSON.parse(readFileSync(join(root, ".task-runner.json"), "utf8"));
-    return typeof parsed.project === "string" && parsed.project.trim() ? parsed.project.trim() : null;
+    const pick2 = (v) => typeof v === "string" && v.trim() ? v.trim() : null;
+    return { project: pick2(parsed.project), org: pick2(parsed.org) };
   } catch {
-    return null;
+    return { project: null, org: null };
   }
 }
 function detectProject(cwd, lookupByPath, env = process.env) {
@@ -22532,8 +22581,10 @@ function detectProject(cwd, lookupByPath, env = process.env) {
   const remote = git(real, "remote", "get-url", "origin");
   const common = git(real, "rev-parse", "--path-format=absolute", "--git-common-dir");
   const mainRoot = common && basename(common) === ".git" ? dirname(common) : root;
-  const project = env.TASK_RUNNER_PROJECT || pinnedProject(root) || lookupByPath?.(root) || (mainRoot !== root ? lookupByPath?.(mainRoot) : null) || (remote ? keyFromRemote(remote) : null) || basename(root);
-  return { project, project_path: root, branch, is_repo: top !== null };
+  const pin = pinned(root);
+  const project = env.TASK_RUNNER_PROJECT || pin.project || lookupByPath?.(root) || (mainRoot !== root ? lookupByPath?.(mainRoot) : null) || (remote ? keyFromRemote(remote) : null) || basename(root);
+  const org = env.TASK_RUNNER_ORG || pin.org || (remote ? ownerFromRemote(remote) : null);
+  return { project, project_path: root, branch, org, is_repo: top !== null };
 }
 var init_project = __esm({
   "src/node/project.ts"() {
@@ -22612,9 +22663,9 @@ function parseLine(line2) {
   if (Array.isArray(content) && content.some((c) => c?.type === "tool_result")) {
     return { ...base, kind: "tool_result" };
   }
-  const text2 = typeof content === "string" ? content : Array.isArray(content) ? content.filter((c) => c?.type === "text").map((c) => c.text ?? "").join(" ") : "";
-  const isHuman = d.origin?.kind === "human" && !d.isMeta && text2.trim() !== "" && !text2.trimStart().startsWith("<");
-  return isHuman ? { ...base, kind: "prompt", text: clipText(text2, 160) } : { ...base, kind: "system" };
+  const text3 = typeof content === "string" ? content : Array.isArray(content) ? content.filter((c) => c?.type === "text").map((c) => c.text ?? "").join(" ") : "";
+  const isHuman = d.origin?.kind === "human" && !d.isMeta && text3.trim() !== "" && !text3.trimStart().startsWith("<");
+  return isHuman ? { ...base, kind: "prompt", text: clipText(text3, 160) } : { ...base, kind: "system" };
 }
 async function* bufferLines(path) {
   let parts = [];
@@ -22758,8 +22809,8 @@ var init_scan = __esm({
     EDIT_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
     FILE_TOOLS = /* @__PURE__ */ new Set([...EDIT_TOOLS, "Read"]);
     SETTING_KEY = "worklog_options";
-    clipText = (text2, max) => {
-      const flat = text2.replace(/\s+/g, " ").trim();
+    clipText = (text3, max) => {
+      const flat = text3.replace(/\s+/g, " ").trim();
       return flat.length > max ? `${flat.slice(0, max - 1)}\u2026` : flat;
     };
     FIELD = /* @__PURE__ */ new Map();
@@ -22774,6 +22825,487 @@ var init_scan = __esm({
     };
     LARGE_LINE = 64 * 1024;
     SCRATCH = /\/scratchpad(\/|$)|\/tmp\/claude-|Application Support\/Claude|\/private\/tmp\//;
+  }
+});
+
+// src/core/rules.ts
+function newId(prefix) {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return `${prefix}_${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+function normalizeKey(input) {
+  const scope = assertIn(input.scope, RULE_SCOPES, "scope");
+  const ref = (input.ref ?? "").trim();
+  const device = (input.device ?? "").trim();
+  const needsRef = scope === "org" || scope === "project" || scope === "project_device";
+  const needsDevice = scope === "device" || scope === "project_device";
+  if (needsRef && !ref) {
+    throw new StoreError("invalid", `scope '${scope}' needs ${scope === "org" ? "an organization" : "a project"}`);
+  }
+  if (needsDevice && !device) throw new StoreError("invalid", `scope '${scope}' needs a device`);
+  return { scope, ref: needsRef ? ref : "", device: needsDevice ? device : "" };
+}
+var RULE_SCOPES, MAX_DOC_CHARS, MAX_RESOLVED_CHARS, ORDER, SCHEMA, RulesStore;
+var init_rules = __esm({
+  "src/core/rules.ts"() {
+    "use strict";
+    init_errors4();
+    RULE_SCOPES = ["global", "device", "org", "project", "project_device"];
+    MAX_DOC_CHARS = 4e3;
+    MAX_RESOLVED_CHARS = 8e3;
+    ORDER = ["global", "device", "org", "project", "project_device"];
+    SCHEMA = `
+  CREATE TABLE IF NOT EXISTS rule_docs (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    ref TEXT NOT NULL DEFAULT '',
+    device TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    updated_at INTEGER NOT NULL,
+    UNIQUE (scope, ref, device)
+  );
+  CREATE TABLE IF NOT EXISTS rule_revisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    source TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_rule_revisions_doc ON rule_revisions(doc_id, version);
+  CREATE TABLE IF NOT EXISTS rule_proposals (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    ref TEXT NOT NULL DEFAULT '',
+    device TEXT NOT NULL DEFAULT '',
+    mode TEXT NOT NULL,
+    text TEXT NOT NULL,
+    reason TEXT,
+    author TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_rule_proposals_status ON rule_proposals(status, created_at);
+  CREATE TABLE IF NOT EXISTS devices (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    platform TEXT,
+    first_seen INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL
+  );
+`;
+    RulesStore = class {
+      db;
+      clock;
+      constructor(db, clock = () => Math.floor(Date.now() / 1e3)) {
+        this.db = db;
+        this.clock = clock;
+        db.exec(SCHEMA);
+      }
+      // ─── Documents ─────────────────────────────────────────
+      listDocs() {
+        return this.db.all("SELECT id, scope, ref, device, body, version, updated_at FROM rule_docs").sort((a, b) => ORDER.indexOf(a.scope) - ORDER.indexOf(b.scope) || a.ref.localeCompare(b.ref) || a.device.localeCompare(b.device));
+      }
+      getDoc(key) {
+        const k = normalizeKey(key);
+        return this.db.get(
+          "SELECT id, scope, ref, device, body, version, updated_at FROM rule_docs WHERE scope = ? AND ref = ? AND device = ?",
+          k.scope,
+          k.ref,
+          k.device
+        ) ?? null;
+      }
+      /** Writes the whole document. An empty body removes it. */
+      setDoc(key, body, source = "user") {
+        const k = normalizeKey(key);
+        const text3 = body.replace(/\r\n/g, "\n").trim();
+        if (text3.length > MAX_DOC_CHARS) {
+          throw new StoreError("invalid", `A rule document is limited to ${MAX_DOC_CHARS} characters (this one has ${text3.length}). Keep rules short.`);
+        }
+        return this.db.transaction(() => {
+          const existing = this.getDoc(k);
+          const t = this.clock();
+          if (text3 === "") {
+            if (existing) {
+              this.db.run("DELETE FROM rule_docs WHERE id = ?", existing.id);
+              this.revision(existing.id, existing.version + 1, "", source);
+            }
+            return { id: existing?.id ?? null, version: existing ? existing.version + 1 : 0, removed: Boolean(existing) };
+          }
+          if (existing) {
+            if (existing.body === text3) return { id: existing.id, version: existing.version, removed: false };
+            const version2 = existing.version + 1;
+            this.db.run("UPDATE rule_docs SET body = ?, version = ?, updated_at = ? WHERE id = ?", text3, version2, t, existing.id);
+            this.revision(existing.id, version2, text3, source);
+            return { id: existing.id, version: version2, removed: false };
+          }
+          const id = newId("rule");
+          this.db.run(
+            "INSERT INTO rule_docs (id, scope, ref, device, body, version, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+            id,
+            k.scope,
+            k.ref,
+            k.device,
+            text3,
+            t
+          );
+          this.revision(id, 1, text3, source);
+          return { id, version: 1, removed: false };
+        });
+      }
+      deleteDoc(id) {
+        required2(id, "id");
+        const doc = this.db.get("SELECT id, version FROM rule_docs WHERE id = ?", id);
+        if (!doc) throw new StoreError("not_found", `Rule document '${id}' not found`);
+        this.db.transaction(() => {
+          this.db.run("DELETE FROM rule_docs WHERE id = ?", id);
+          this.revision(id, doc.version + 1, "", "user");
+        });
+        return { deleted: id };
+      }
+      revisions(docId) {
+        return this.db.all(
+          "SELECT version, body, source, at FROM rule_revisions WHERE doc_id = ? ORDER BY version DESC LIMIT 50",
+          required2(docId, "doc_id")
+        );
+      }
+      revision(docId, version2, body, source) {
+        this.db.run(
+          "INSERT INTO rule_revisions (doc_id, version, body, source, at) VALUES (?, ?, ?, ?, ?)",
+          docId,
+          version2,
+          body,
+          source,
+          this.clock()
+        );
+      }
+      // ─── Resolving ─────────────────────────────────────────
+      resolve(context2, options = {}) {
+        const max = options.maxChars ?? MAX_RESOLVED_CHARS;
+        const wanted = [{ key: { scope: "global" }, label: "Everywhere" }];
+        const deviceName = context2.device ? this.deviceLabel(context2.device) ?? context2.device : null;
+        if (context2.device) wanted.push({ key: { scope: "device", device: context2.device }, label: `This device (${deviceName})` });
+        if (context2.org) wanted.push({ key: { scope: "org", ref: context2.org }, label: `Organization ${context2.org}` });
+        if (context2.project) wanted.push({ key: { scope: "project", ref: context2.project }, label: `Project ${context2.project}` });
+        if (context2.project && context2.device) {
+          wanted.push({ key: { scope: "project_device", ref: context2.project, device: context2.device }, label: `Project ${context2.project} on this device` });
+        }
+        const parts = [];
+        for (const w of wanted) {
+          const doc = this.getDoc(w.key);
+          if (doc) parts.push({ scope: doc.scope, label: w.label, chars: doc.body.length, body: doc.body });
+        }
+        let truncated = false;
+        let total = parts.reduce((n, p) => n + p.chars, 0);
+        for (let i = 0; i < parts.length && total > max; i++) {
+          const over = total - max;
+          const cut = Math.min(parts[i].body.length, over);
+          parts[i].body = cut >= parts[i].body.length ? "" : `${parts[i].body.slice(0, parts[i].body.length - cut).trimEnd()}
+[cut: rules exceed ${max} characters]`;
+          total -= cut;
+          truncated = true;
+        }
+        const used = parts.filter((p) => p.body !== "");
+        if (used.length === 0) return { text: "", chars: 0, parts: [], truncated };
+        const text3 = [
+          "RULES from the user, set in Task Runner. Follow them. When two sections disagree, the later (more specific) one wins; the repository's own CLAUDE.md still applies.",
+          ...used.map((p) => `## ${p.label}
+${p.body}`)
+        ].join("\n\n");
+        return { text: text3, chars: text3.length, parts: used.map(({ scope, label, chars }) => ({ scope, label, chars })), truncated };
+      }
+      // ─── Proposals ─────────────────────────────────────────
+      propose(input) {
+        const k = normalizeKey(input.key);
+        const mode = assertIn(input.mode ?? "append", ["append", "replace"], "mode");
+        const text3 = required2(input.text, "text").trim();
+        if (text3.length > MAX_DOC_CHARS) throw new StoreError("invalid", `A proposal is limited to ${MAX_DOC_CHARS} characters`);
+        const duplicate = this.db.get(
+          "SELECT 1 FROM rule_proposals WHERE status = 'pending' AND scope = ? AND ref = ? AND device = ? AND mode = ? AND text = ?",
+          k.scope,
+          k.ref,
+          k.device,
+          mode,
+          text3
+        );
+        if (duplicate) throw new StoreError("conflict", "The same proposal is already waiting for approval");
+        const pending = this.db.get("SELECT COUNT(*) AS n FROM rule_proposals WHERE status = 'pending'")?.n ?? 0;
+        if (pending >= 50) throw new StoreError("conflict", "Too many proposals are waiting. Approve or reject some first.");
+        const id = newId("prop");
+        this.db.run(
+          `INSERT INTO rule_proposals (id, scope, ref, device, mode, text, reason, author, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id,
+          k.scope,
+          k.ref,
+          k.device,
+          mode,
+          text3,
+          input.reason ?? null,
+          input.author ?? "agent",
+          this.clock()
+        );
+        return this.getProposal(id);
+      }
+      getProposal(id) {
+        return this.db.get(
+          "SELECT id, scope, ref, device, mode, text, reason, author, status, created_at, decided_at FROM rule_proposals WHERE id = ?",
+          id
+        ) ?? null;
+      }
+      listProposals(status = "pending") {
+        const where = status === "all" ? "" : " WHERE status = ?";
+        const values = status === "all" ? [] : [status];
+        return this.db.all(
+          `SELECT id, scope, ref, device, mode, text, reason, author, status, created_at, decided_at
+       FROM rule_proposals${where} ORDER BY created_at DESC LIMIT 100`,
+          ...values
+        );
+      }
+      approve(id, editedText) {
+        const proposal = this.getProposal(required2(id, "id"));
+        if (!proposal) throw new StoreError("not_found", `Proposal '${id}' not found`);
+        if (proposal.status !== "pending") throw new StoreError("conflict", `Proposal '${id}' was already ${proposal.status}`);
+        return this.db.transaction(() => {
+          const key = { scope: proposal.scope, ref: proposal.ref, device: proposal.device };
+          const text3 = (editedText ?? proposal.text).trim();
+          const current = this.getDoc(key)?.body ?? "";
+          const next = proposal.mode === "replace" || current === "" ? text3 : `${current}
+${text3}`;
+          const written = this.setDoc(key, next, `proposal ${proposal.id} by ${proposal.author}`);
+          this.db.run("UPDATE rule_proposals SET status = 'approved', decided_at = ? WHERE id = ?", this.clock(), id);
+          return { approved: id, doc_id: written.id, version: written.version };
+        });
+      }
+      reject(id) {
+        const proposal = this.getProposal(required2(id, "id"));
+        if (!proposal) throw new StoreError("not_found", `Proposal '${id}' not found`);
+        if (proposal.status !== "pending") throw new StoreError("conflict", `Proposal '${id}' was already ${proposal.status}`);
+        this.db.run("UPDATE rule_proposals SET status = 'rejected', decided_at = ? WHERE id = ?", this.clock(), id);
+        return { rejected: id };
+      }
+      pendingCount() {
+        return this.db.get("SELECT COUNT(*) AS n FROM rule_proposals WHERE status = 'pending'")?.n ?? 0;
+      }
+      // ─── Devices ───────────────────────────────────────────
+      registerDevice(input) {
+        const id = required2(input.id, "id").trim();
+        const label = required2(input.label, "label").trim().slice(0, 60);
+        const t = this.clock();
+        this.db.run(
+          `INSERT INTO devices (id, label, platform, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET last_seen = excluded.last_seen, platform = COALESCE(excluded.platform, platform)`,
+          id,
+          label,
+          input.platform ?? null,
+          t,
+          t
+        );
+        return this.db.get("SELECT id, label, platform, first_seen, last_seen FROM devices WHERE id = ?", id);
+      }
+      renameDevice(id, label) {
+        const clean = required2(label, "label").trim().slice(0, 60);
+        if (!this.deviceLabel(id)) throw new StoreError("not_found", `Device '${id}' not found`);
+        this.db.run("UPDATE devices SET label = ? WHERE id = ?", clean, id);
+        return { id, label: clean };
+      }
+      listDevices() {
+        return this.db.all("SELECT id, label, platform, first_seen, last_seen FROM devices ORDER BY last_seen DESC");
+      }
+      deviceLabel(id) {
+        return this.db.get("SELECT label FROM devices WHERE id = ?", id)?.label ?? null;
+      }
+    };
+  }
+});
+
+// src/node/remote.ts
+import { chmodSync, existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, unlinkSync, writeFileSync } from "node:fs";
+import { homedir as homedir2, hostname as hostname2, platform } from "node:os";
+import { dirname as dirname3, join as join3 } from "node:path";
+function homeDir(env = process.env) {
+  return env.TASK_RUNNER_HOME || join3(homedir2(), ".task-runner");
+}
+function loadRemote(env = process.env) {
+  if (env.TASK_RUNNER_REMOTE_URL && env.TASK_RUNNER_REMOTE_KEY) {
+    return { url: env.TASK_RUNNER_REMOTE_URL.replace(/\/+$/, ""), key: env.TASK_RUNNER_REMOTE_KEY };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync2(remoteFile(env), "utf8"));
+    return parsed.url && parsed.key ? { url: parsed.url.replace(/\/+$/, ""), key: parsed.key } : null;
+  } catch {
+    return null;
+  }
+}
+function saveRemote(config2, env = process.env) {
+  const file = remoteFile(env);
+  mkdirSync(dirname3(file), { recursive: true, mode: 448 });
+  writeFileSync(file, JSON.stringify(config2), { mode: 384 });
+  chmodSync(file, 384);
+}
+function clearRemote(env = process.env) {
+  const file = remoteFile(env);
+  if (!existsSync2(file)) return false;
+  unlinkSync(file);
+  return true;
+}
+function deviceInfo(env = process.env) {
+  const file = deviceFile(env);
+  try {
+    const parsed = JSON.parse(readFileSync2(file, "utf8"));
+    if (parsed.id && parsed.label) return { id: parsed.id, label: parsed.label, platform: parsed.platform ?? platform() };
+  } catch {
+  }
+  const info = {
+    id: `dev-${crypto.randomUUID().slice(0, 8)}`,
+    label: env.TASK_RUNNER_DEVICE_LABEL || hostname2().replace(/\.local$/, ""),
+    platform: platform()
+  };
+  mkdirSync(dirname3(file), { recursive: true, mode: 448 });
+  writeFileSync(file, JSON.stringify(info));
+  return info;
+}
+function setDeviceLabel(label, env = process.env) {
+  const info = { ...deviceInfo(env), label: label.trim().slice(0, 60) };
+  writeFileSync(deviceFile(env), JSON.stringify(info));
+  return info;
+}
+function openRulesClient(db, options = {}) {
+  const remote = loadRemote(options.env);
+  return remote ? new RemoteRulesClient(remote, options.timeoutMs) : new LocalRulesClient(new RulesStore(db));
+}
+function readRulesCache(ctx, env = process.env) {
+  try {
+    const all = JSON.parse(readFileSync2(cacheFile(env), "utf8"));
+    return all[cacheKey(ctx)] ?? null;
+  } catch {
+    return null;
+  }
+}
+function writeRulesCache(ctx, text3, env = process.env) {
+  let all = {};
+  try {
+    all = JSON.parse(readFileSync2(cacheFile(env), "utf8"));
+  } catch {
+  }
+  all[cacheKey(ctx)] = { text: text3, at: Math.floor(Date.now() / 1e3) };
+  mkdirSync(dirname3(cacheFile(env)), { recursive: true, mode: 448 });
+  writeFileSync(cacheFile(env), JSON.stringify(all));
+}
+async function resolveForHook(client, ctx, env = process.env) {
+  try {
+    const resolved = await client.resolve(ctx);
+    if (client.mode === "remote") writeRulesCache(ctx, resolved.text, env);
+    return { text: resolved.text, pending: resolved.pending, stale: false };
+  } catch (error2) {
+    const cached2 = readRulesCache(ctx, env);
+    const reason = error2 instanceof Error ? error2.message : String(error2);
+    return cached2 ? { text: cached2.text, pending: 0, stale: true, error: reason } : { text: "", pending: 0, stale: false, error: reason };
+  }
+}
+var remoteFile, deviceFile, LocalRulesClient, RemoteRulesClient, cacheFile, cacheKey;
+var init_remote = __esm({
+  "src/node/remote.ts"() {
+    "use strict";
+    init_rules();
+    remoteFile = (env) => join3(homeDir(env), "remote.json");
+    deviceFile = (env) => join3(homeDir(env), "device.json");
+    LocalRulesClient = class {
+      mode = "local";
+      rules;
+      constructor(rules) {
+        this.rules = rules;
+      }
+      async resolve(context2) {
+        return { ...this.rules.resolve(context2), pending: this.rules.pendingCount() };
+      }
+      async listDocs() {
+        return this.rules.listDocs();
+      }
+      async setDoc(key, body) {
+        return this.rules.setDoc(key, body, "user");
+      }
+      async listProposals(status = "pending") {
+        return this.rules.listProposals(status);
+      }
+      async propose(input) {
+        return this.rules.propose(input);
+      }
+      async approve(id, text3) {
+        return this.rules.approve(id, text3);
+      }
+      async reject(id) {
+        return this.rules.reject(id);
+      }
+      async listDevices() {
+        return this.rules.listDevices();
+      }
+      async registerDevice(device) {
+        return this.rules.registerDevice(device);
+      }
+      async renameDevice(id, label) {
+        return this.rules.renameDevice(id, label);
+      }
+    };
+    RemoteRulesClient = class {
+      mode = "remote";
+      config;
+      timeoutMs;
+      constructor(config2, timeoutMs = 8e3) {
+        this.config = config2;
+        this.timeoutMs = timeoutMs;
+      }
+      async call(method, path, options = {}) {
+        const url = new URL(`${this.config.url}/api${path}`);
+        for (const [k, v] of Object.entries(options.query ?? {})) if (v) url.searchParams.set(k, v);
+        const response = await fetch(url, {
+          method,
+          headers: {
+            Authorization: `Bearer ${this.config.key}`,
+            ...options.body === void 0 ? {} : { "Content-Type": "application/json" }
+          },
+          body: options.body === void 0 ? void 0 : JSON.stringify(options.body),
+          signal: AbortSignal.timeout(this.timeoutMs)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error ?? `Server answered ${response.status}`);
+        return data;
+      }
+      resolve(context2) {
+        return this.call("GET", "/rules/resolve", { query: { project: context2.project, org: context2.org, device: context2.device } });
+      }
+      async listDocs() {
+        return (await this.call("GET", "/rules/docs")).docs;
+      }
+      setDoc(key, body) {
+        return this.call("PUT", "/rules/docs", { body: { ...key, body } });
+      }
+      async listProposals(status = "pending") {
+        return (await this.call("GET", "/rules/proposals", { query: { status } })).proposals;
+      }
+      async propose(input) {
+        return (await this.call("POST", "/rules/proposals", { body: { ...input.key, mode: input.mode, text: input.text, reason: input.reason, author: input.author } })).proposal;
+      }
+      approve(id, text3) {
+        return this.call("POST", "/rules/proposals/approve", { body: { id, text: text3 } });
+      }
+      reject(id) {
+        return this.call("POST", "/rules/proposals/reject", { body: { id } });
+      }
+      async listDevices() {
+        return (await this.call("GET", "/devices")).devices;
+      }
+      registerDevice(device) {
+        return this.call("POST", "/devices", { body: device });
+      }
+      renameDevice(id, label) {
+        return this.call("PUT", "/devices", { body: { id, label } });
+      }
+    };
+    cacheFile = (env) => join3(homeDir(env), "rules-cache.json");
+    cacheKey = (ctx) => `${ctx.project ?? ""}|${ctx.org ?? ""}|${ctx.device ?? ""}`;
   }
 });
 
@@ -22849,14 +23381,14 @@ var slug, day2;
 var init_markdown = __esm({
   "src/core/markdown.ts"() {
     "use strict";
-    slug = (text2) => text2.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ı/g, "i").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80) || "untitled";
+    slug = (text3) => text3.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ı/g, "i").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80) || "untitled";
     day2 = (seconds) => typeof seconds === "number" ? new Date(seconds * 1e3).toISOString().slice(0, 10) : "";
   }
 });
 
 // src/core/fts.ts
-function fold(text2) {
-  return text2.replace(/ı/g, "i").replace(/İ/g, "I");
+function fold(text3) {
+  return text3.replace(/ı/g, "i").replace(/İ/g, "I");
 }
 function ftsQuery(input) {
   const tokens = fold(input).match(/[\p{L}\p{N}_]+/gu);
@@ -22864,7 +23396,22 @@ function ftsQuery(input) {
   const all = [...new Set(tokens.map((t) => t.toLowerCase()))];
   const content = all.filter((t) => !STOPWORDS.has(t));
   const unique = (content.length > 0 ? content : all).slice(0, 12);
-  return unique.map((t) => t.length >= 2 ? `"${t}"*` : `"${t}"`).join(" OR ");
+  const terms = /* @__PURE__ */ new Set();
+  for (const t of unique) {
+    terms.add(t.length >= 2 ? `"${t}"*` : `"${t}"`);
+    if (t.length >= 7) terms.add(`"${t.slice(0, Math.max(5, Math.min(6, t.length - 2)))}"*`);
+    else if (t.length >= 4 && /[^siu]s$/.test(t)) terms.add(`"${t.slice(0, -1)}"*`);
+  }
+  return [...terms].join(" OR ");
+}
+function trigramQuery(input) {
+  const tokens = fold(input).toLowerCase().match(/[\p{L}\p{N}_]{3,}/gu);
+  if (!tokens) return null;
+  const content = tokens.filter((t) => !STOPWORDS.has(t));
+  return [...new Set(content.length ? content : tokens)].slice(0, 12).map((t) => `"${t}"`).join(" OR ");
+}
+function wordSet(text3) {
+  return new Set((fold(text3).toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).filter((t) => !STOPWORDS.has(t)));
 }
 var foldSql, STOPWORDS;
 var init_fts = __esm({
@@ -22897,11 +23444,12 @@ function migrate(db) {
     });
   }
 }
-var FTS_TOKENIZER, migrations, SCHEMA_VERSION;
+var FTS_TOKENIZER, FTS_TOKENIZER_V4, migrations, SCHEMA_VERSION;
 var init_schema = __esm({
   "src/core/schema.ts"() {
     "use strict";
     FTS_TOKENIZER = "porter unicode61 remove_diacritics 2";
+    FTS_TOKENIZER_V4 = "unicode61 remove_diacritics 2";
     migrations = [
       (db) => {
         db.exec(`
@@ -23058,6 +23606,31 @@ var init_schema = __esm({
         PRIMARY KEY (project_key, branch, target)
       );
     `);
+      },
+      (db) => {
+        db.exec(`
+      ALTER TABLE entities ADD COLUMN keywords TEXT;
+      DROP TABLE entities_fts;
+      CREATE VIRTUAL TABLE entities_fts USING fts5(
+        name, keywords, summary, facts,
+        tokenize = '${FTS_TOKENIZER_V4}'
+      );
+      DROP TABLE entries_fts;
+      CREATE VIRTUAL TABLE entries_fts USING fts5(
+        title, content, tags,
+        tokenize = '${FTS_TOKENIZER_V4}'
+      );
+    `);
+        for (const tokenizer of ["trigram remove_diacritics 1", "trigram"]) {
+          try {
+            db.exec(`CREATE VIRTUAL TABLE entities_tri USING fts5(body, tokenize = '${tokenizer}')`);
+            break;
+          } catch {
+          }
+        }
+        db.run(
+          "INSERT INTO schema_meta (key, value) VALUES ('reindex', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+        );
       }
     ];
     SCHEMA_VERSION = migrations.length;
@@ -23065,7 +23638,7 @@ var init_schema = __esm({
 });
 
 // src/core/store.ts
-function newId(prefix) {
+function newId2(prefix) {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return `${prefix}_${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
@@ -23073,6 +23646,22 @@ function localDayOf(epochSeconds) {
   const d = new Date(epochSeconds * 1e3);
   const pad2 = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function mergeKeywords(previous, added) {
+  const all = new Set(
+    [...previous.split(","), ...added].map((k) => k.trim().toLowerCase()).filter((k) => k.length > 0 && k.length <= 60)
+  );
+  return all.size ? [...all].slice(0, 30).join(",") : null;
+}
+function looksLikeConflict(a, b) {
+  const wa = wordSet(a);
+  const wb = wordSet(b);
+  if (wa.size < 2 || wb.size < 2) return false;
+  let shared = 0;
+  for (const w of wa) if (wb.has(w)) shared++;
+  const overlap = shared / Math.min(wa.size, wb.size);
+  const numbers = (t) => (t.match(/\d+(?:[.,]\d+)?/g) ?? []).join("|");
+  return overlap >= 0.6 && numbers(a) !== numbers(b) && numbers(a) !== "" && numbers(b) !== "";
 }
 function clamp(n, min, max) {
   return Math.min(Math.max(n, min), max);
@@ -23133,7 +23722,13 @@ var init_store = __esm({
         this.db = db;
         this.clock = clock;
         migrate(db);
+        this.hasTrigram = Boolean(db.get("SELECT 1 FROM sqlite_master WHERE name = 'entities_tri'"));
+        if (db.get("SELECT value FROM schema_meta WHERE key = 'reindex'")?.value === "1") {
+          this.reindexAll();
+          db.run("DELETE FROM schema_meta WHERE key = 'reindex'");
+        }
       }
+      hasTrigram;
       // ─── Projects ──────────────────────────────────────────
       setContext(input) {
         const project = required2(input.project, "project").trim();
@@ -23288,7 +23883,7 @@ var init_store = __esm({
           throw new StoreError("invalid", `scope '${scope}' needs a ${scope === "pr" ? "pr number" : "branch"} in context`);
         }
         this.ensureProject(project);
-        const id = newId("entry");
+        const id = newId2("entry");
         this.db.transaction(() => {
           this.db.run(
             "INSERT INTO entries (id, project_key, scope, scope_ref, type, title, content, tags, session_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -23412,8 +24007,11 @@ var init_store = __esm({
             type
           );
           let id;
+          const previous = existing ? this.db.get("SELECT keywords FROM entities WHERE id = ?", existing.id)?.keywords ?? "" : "";
+          const keywords = mergeKeywords(previous, input.keywords ?? []);
           if (existing) {
             id = existing.id;
+            this.db.run("UPDATE entities SET keywords = ? WHERE id = ?", keywords, existing.id);
             this.db.run(
               `UPDATE entities SET summary = COALESCE(?, summary), properties = COALESCE(?, properties),
              importance = COALESCE(?, importance), valid_until = NULL, updated_at = ?, last_accessed = ?
@@ -23426,10 +24024,10 @@ var init_store = __esm({
               id
             );
           } else {
-            id = newId("ent");
+            id = newId2("ent");
             this.db.run(
-              `INSERT INTO entities (id, project_key, name, entity_type, summary, properties, importance, last_accessed, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO entities (id, project_key, name, entity_type, summary, properties, importance, last_accessed, created_at, updated_at, keywords)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               id,
               project,
               name,
@@ -23439,10 +24037,11 @@ var init_store = __esm({
               initialImportance,
               t,
               t,
-              t
+              t,
+              keywords
             );
           }
-          const added = this.insertFacts(id, input.observations ?? []);
+          const { ids: added, conflicts } = this.insertFacts(id, input.observations ?? []);
           this.indexEntity(id);
           const result = {
             entity_id: id,
@@ -23455,10 +24054,21 @@ var init_store = __esm({
             const similar = this.similarEntities(project, name, id);
             if (similar.length > 0) result.similar_existing = similar;
           }
-          if (added.length > 0) {
-            const suggestions = this.linkSuggestions(project, id, (input.observations ?? []).concat(input.summary ?? ""));
-            if (suggestions.length > 0) result.link_suggestions = suggestions;
+          if (added.length > 0 || input.summary) {
+            const mentioned = this.mentionedEntities(project, id, (input.observations ?? []).concat(input.summary ?? ""));
+            for (const other of mentioned) {
+              this.db.run(
+                "INSERT OR IGNORE INTO relations (id, source_id, target_id, relation_type, weight, context, created_at) VALUES (?, ?, ?, 'relates_to', 0.5, ?, ?)",
+                newId2("rel"),
+                id,
+                other.id,
+                "mentioned in a fact (automatic)",
+                this.clock()
+              );
+            }
+            if (mentioned.length > 0) result.auto_linked = mentioned.map((m) => m.name);
           }
+          if (conflicts.length > 0) result.possible_conflicts = conflicts;
           return result;
         });
       }
@@ -23466,7 +24076,7 @@ var init_store = __esm({
         if (!input.facts?.length) throw new StoreError("invalid", "facts must contain at least one item");
         const entity = this.resolveEntity(input.project, input.entity_name, input.entity_type);
         return this.db.transaction(() => {
-          const added = this.insertFacts(entity.id, input.facts);
+          const { ids: added } = this.insertFacts(entity.id, input.facts);
           this.db.run("UPDATE entities SET updated_at = ? WHERE id = ?", this.clock(), entity.id);
           this.indexEntity(entity.id);
           return { entity_id: entity.id, added: added.length, skipped_duplicates: input.facts.length - added.length };
@@ -23485,7 +24095,7 @@ var init_store = __esm({
         return this.db.transaction(() => {
           let newId_ = null;
           if (input.new_fact?.trim()) {
-            newId_ = newId("obs");
+            newId_ = newId2("obs");
             this.db.run(
               "INSERT INTO observations (id, entity_id, content, created_at) VALUES (?, ?, ?, ?)",
               newId_,
@@ -23522,7 +24132,7 @@ var init_store = __esm({
         } else {
           this.db.run(
             "INSERT INTO relations (id, source_id, target_id, relation_type, weight, context, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            newId("rel"),
+            newId2("rel"),
             from.id,
             to.id,
             type,
@@ -23617,40 +24227,83 @@ var init_store = __esm({
         );
       }
       recall(input) {
-        const match = ftsQuery(required2(input.q, "query"));
-        if (!match) return { entities: [], entries: [] };
+        const q = required2(input.q, "query");
+        const match = ftsQuery(q);
+        if (!match) return { entities: [], entries: [], related: [] };
         const limit = clamp(Math.floor(input.limit ?? 10), 1, MAX_RECALL_RESULTS);
-        const values = [match];
+        const scope = [];
         let filter = "e.valid_until IS NULL";
         if (!input.all_projects) {
           filter += " AND e.project_key IN (?, ?)";
-          values.push(required2(input.project, "project"), GLOBAL_PROJECT);
+          scope.push(required2(input.project, "project"), GLOBAL_PROJECT);
         }
         if (input.entity_type) {
           filter += " AND e.entity_type = ?";
-          values.push(assertIn(input.entity_type, ENTITY_TYPES, "entity_type"));
+          scope.push(assertIn(input.entity_type, ENTITY_TYPES, "entity_type"));
         }
-        const candidates = this.db.all(
-          `SELECT ${ENTITY_COLS.split(", ").map((c) => `e.${c}`).join(", ")}, bm25(entities_fts, 8.0, 3.0, 1.0) AS rank
+        const cols = ENTITY_COLS.split(", ").map((c) => `e.${c}`).join(", ");
+        const words2 = this.db.all(
+          `SELECT ${cols}, bm25(entities_fts, 8.0, 5.0, 3.0, 1.0) AS rank
        FROM entities_fts JOIN entities e ON e.seq = entities_fts.rowid
        WHERE entities_fts MATCH ? AND ${filter}
        ORDER BY rank LIMIT ?`,
-          ...values,
+          match,
+          ...scope,
           limit * 3
         );
+        const relevance = /* @__PURE__ */ new Map();
+        const best = Math.min(...words2.map((c) => c.rank), -1e-9);
+        for (const c of words2) relevance.set(c.id, c.rank / best);
+        let candidates = words2;
+        const tri = this.hasTrigram && words2.length < limit ? trigramQuery(q) : null;
+        if (tri) {
+          const parts = this.db.all(
+            `SELECT ${cols}, bm25(entities_tri) AS rank
+         FROM entities_tri JOIN entities e ON e.seq = entities_tri.rowid
+         WHERE entities_tri MATCH ? AND ${filter}
+         ORDER BY rank LIMIT ?`,
+            tri,
+            ...scope,
+            limit * 2
+          );
+          const bestTri = Math.min(...parts.map((c) => c.rank), -1e-9);
+          for (const c of parts) {
+            if (relevance.has(c.id)) continue;
+            relevance.set(c.id, 0.5 * (c.rank / bestTri));
+            candidates = [...candidates, c];
+          }
+        }
         const now = this.clock();
-        const best = Math.min(...candidates.map((c) => c.rank), -1e-9);
         const scored = candidates.map((c) => {
-          const relevance = best === 0 ? 1 : c.rank / best;
           const ageDays = Math.max(0, (now - c.last_accessed) / 86400);
           const accessBoost = 1 + 0.1 * Math.log(c.access_count + 1);
           const importance = Math.min(1, c.importance * Math.pow(0.5, ageDays / IMPORTANCE_HALF_LIFE_DAYS) * accessBoost);
           const recency = 1 / (1 + ageDays / 7);
           const { rank: _rank, ...entity } = c;
-          return { ...entity, score: Number((relevance * 0.55 + importance * 0.3 + recency * 0.15).toFixed(4)) };
+          return { ...entity, score: (relevance.get(c.id) ?? 0) * 0.55 + importance * 0.3 + recency * 0.15 };
         });
         scored.sort((a, b) => b.score - a.score);
-        const top = scored.slice(0, limit);
+        const anchors = scored.slice(0, 5);
+        const byId = new Map(scored.map((e) => [e.id, e]));
+        const related = /* @__PURE__ */ new Map();
+        for (const anchor of anchors) {
+          for (const n of this.db.all(
+            `SELECT e.id, e.name, e.entity_type, e.project_key, r.relation_type, r.weight
+         FROM relations r JOIN entities e ON e.id = CASE WHEN r.source_id = ? THEN r.target_id ELSE r.source_id END
+         WHERE (r.source_id = ? OR r.target_id = ?) AND r.valid_until IS NULL AND e.valid_until IS NULL`,
+            anchor.id,
+            anchor.id,
+            anchor.id
+          )) {
+            const inList = byId.get(n.id);
+            if (inList && inList !== anchor) inList.score += 0.08 * Math.min(1, n.weight);
+            else if (!inList && (input.all_projects || n.project_key === input.project || n.project_key === GLOBAL_PROJECT)) {
+              if (!related.has(n.id)) related.set(n.id, { name: n.name, entity_type: n.entity_type, relation: n.relation_type, via: anchor.name });
+            }
+          }
+        }
+        scored.sort((a, b) => b.score - a.score);
+        const top = scored.slice(0, limit).map((e) => ({ ...e, score: Number(e.score.toFixed(4)) }));
         const entities = top.map((e) => ({
           ...e,
           observations: this.facts(e.id, 5)
@@ -23669,7 +24322,27 @@ var init_store = __esm({
        ORDER BY bm25(entries_fts, 5.0, 1.0, 2.0) LIMIT 5`,
           ...entryValues
         );
-        return { entities, entries };
+        return { entities, entries, related: [...related.values()].slice(0, 6) };
+      }
+      /** Removes the links between two entities, of one type or all. */
+      unlink(input) {
+        const from = this.resolveEntity(input.project, input.from_name, input.from_type);
+        const to = this.resolveEntity(input.project, input.to_name, input.to_type);
+        const values = [this.clock(), from.id, to.id, to.id, from.id];
+        let typeFilter = "";
+        if (input.relation_type) {
+          typeFilter = " AND relation_type = ?";
+          values.push(assertIn(input.relation_type, RELATION_TYPES, "relation_type"));
+        }
+        const before = this.db.get(
+          `SELECT COUNT(*) AS n FROM relations WHERE valid_until IS NULL AND ((source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?))${typeFilter}`,
+          ...values.slice(1)
+        )?.n ?? 0;
+        this.db.run(
+          `UPDATE relations SET valid_until = ? WHERE valid_until IS NULL AND ((source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?))${typeFilter}`,
+          ...values
+        );
+        return { removed: before, from: from.name, to: to.name };
       }
       graphAll(project) {
         required2(project, "project");
@@ -24130,7 +24803,7 @@ var init_store = __esm({
       // ─── Export / import ───────────────────────────────────
       exportAll(project) {
         const tables = {};
-        const scoped = (col, join6 = "") => project ? ` ${join6} WHERE ${col} = ?` : "";
+        const scoped = (col, join8 = "") => project ? ` ${join8} WHERE ${col} = ?` : "";
         const args = project ? [project] : [];
         const cols = (table, alias) => EXPORT_COLUMNS[table].map((c) => `${alias}.${c}`).join(", ");
         tables.projects = this.db.all(`SELECT ${cols("projects", "p")} FROM projects p${scoped("p.key")}`, ...args);
@@ -24175,6 +24848,7 @@ var init_store = __esm({
         this.db.transaction(() => {
           this.db.run("DELETE FROM entries_fts");
           this.db.run("DELETE FROM entities_fts");
+          if (this.hasTrigram) this.db.run("DELETE FROM entities_tri");
           this.db.run(
             `INSERT INTO entries_fts(rowid, title, content, tags)
          SELECT seq, ${foldSql("title")}, ${foldSql("content")}, ${foldSql("COALESCE(tags, '')")} FROM entries`
@@ -24197,25 +24871,35 @@ var init_store = __esm({
       }
       indexEntity(id) {
         const e = this.db.get(
-          "SELECT seq, name, summary, valid_until FROM entities WHERE id = ?",
+          "SELECT seq, name, summary, keywords, valid_until FROM entities WHERE id = ?",
           id
         );
         if (!e) return;
         this.db.run("DELETE FROM entities_fts WHERE rowid = ?", e.seq);
+        if (this.hasTrigram) this.db.run("DELETE FROM entities_tri WHERE rowid = ?", e.seq);
         if (e.valid_until !== null) return;
         const facts = this.db.get(
           "SELECT group_concat(content, char(10)) AS facts FROM observations WHERE entity_id = ? AND valid_until IS NULL",
           id
-        );
+        )?.facts ?? "";
+        const keywords = (e.keywords ?? "").replace(/,/g, " ");
         this.db.run(
-          "INSERT INTO entities_fts(rowid, name, summary, facts) VALUES (?, ?, ?, ?)",
+          "INSERT INTO entities_fts(rowid, name, keywords, summary, facts) VALUES (?, ?, ?, ?, ?)",
           e.seq,
           fold(e.name),
+          fold(keywords),
           fold(e.summary ?? ""),
-          fold(facts?.facts ?? "")
+          fold(facts)
         );
+        if (this.hasTrigram) {
+          this.db.run(
+            "INSERT INTO entities_tri(rowid, body) VALUES (?, ?)",
+            e.seq,
+            fold([e.name, keywords, e.summary ?? "", facts].join(" ")).toLowerCase()
+          );
+        }
       }
-      linkSuggestions(project, entityId, texts) {
+      mentionedEntities(project, entityId, texts) {
         const haystack = texts.join(" \n ").toLowerCase();
         if (haystack.trim().length < 4) return [];
         const linked = new Set(
@@ -24242,8 +24926,8 @@ var init_store = __esm({
           const after = haystack[at + needle.length];
           const isWord = (c) => c !== void 0 && /[\p{L}\p{N}]/u.test(c);
           if (isWord(before) || isWord(after)) continue;
-          out.push(e.name);
-          if (out.length === 3) break;
+          out.push(e);
+          if (out.length === 5) break;
         }
         return out;
       }
@@ -24254,7 +24938,7 @@ var init_store = __esm({
           `SELECT e.name, e.entity_type
        FROM entities_fts JOIN entities e ON e.seq = entities_fts.rowid
        WHERE entities_fts MATCH ? AND e.project_key IN (?, ?) AND e.valid_until IS NULL AND e.id <> ?
-       ORDER BY bm25(entities_fts, 8.0, 3.0, 0.0) LIMIT 3`,
+       ORDER BY bm25(entities_fts, 8.0, 4.0, 3.0, 0.0) LIMIT 3`,
           match,
           project,
           GLOBAL_PROJECT,
@@ -24263,7 +24947,12 @@ var init_store = __esm({
       }
       insertFacts(entityId, facts) {
         const ids = [];
+        const conflicts = [];
         const seen = /* @__PURE__ */ new Set();
+        const existing = this.db.all(
+          "SELECT id, content FROM observations WHERE entity_id = ? AND valid_until IS NULL",
+          entityId
+        );
         for (const raw of facts) {
           const fact2 = raw.trim();
           if (fact2.length > MAX_FACT_LENGTH) {
@@ -24274,17 +24963,15 @@ var init_store = __esm({
           }
           if (!fact2 || seen.has(fact2.toLowerCase())) continue;
           seen.add(fact2.toLowerCase());
-          const dup = this.db.get(
-            "SELECT 1 FROM observations WHERE entity_id = ? AND valid_until IS NULL AND content = ? COLLATE NOCASE",
-            entityId,
-            fact2
-          );
-          if (dup) continue;
-          const id = newId("obs");
+          if (existing.some((e) => e.content.toLowerCase() === fact2.toLowerCase())) continue;
+          for (const other of existing) {
+            if (looksLikeConflict(fact2, other.content)) conflicts.push({ id: other.id, text: other.content });
+          }
+          const id = newId2("obs");
           this.db.run("INSERT INTO observations (id, entity_id, content, created_at) VALUES (?, ?, ?, ?)", id, entityId, fact2, this.clock());
           ids.push(id);
         }
-        return ids;
+        return { ids, conflicts: conflicts.slice(0, 5) };
       }
       facts(entityId, limit) {
         return this.db.all(
@@ -24359,15 +25046,15 @@ var init_store = __esm({
 });
 
 // src/node/sqlite.ts
-import { mkdirSync } from "node:fs";
-import { homedir as homedir2 } from "node:os";
-import { dirname as dirname3, join as join3 } from "node:path";
+import { mkdirSync as mkdirSync2 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { dirname as dirname4, join as join4 } from "node:path";
 function defaultDbPath(env = process.env) {
   if (env.TASK_RUNNER_DB) return env.TASK_RUNNER_DB;
-  return join3(env.TASK_RUNNER_HOME || join3(homedir2(), ".task-runner"), "memory.db");
+  return join4(env.TASK_RUNNER_HOME || join4(homedir3(), ".task-runner"), "memory.db");
 }
 function openDb(path) {
-  if (path !== ":memory:") mkdirSync(dirname3(path), { recursive: true, mode: 448 });
+  if (path !== ":memory:") mkdirSync2(dirname4(path), { recursive: true, mode: 448 });
   const { DatabaseSync } = process.getBuiltinModule("node:sqlite");
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;");
@@ -24454,7 +25141,7 @@ var clip2, line, day3;
 var init_digest = __esm({
   "src/cli/digest.ts"() {
     "use strict";
-    clip2 = (text2, max) => text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
+    clip2 = (text3, max) => text3.length > max ? `${text3.slice(0, max - 1)}\u2026` : text3;
     line = (e) => {
       const detail = [e.summary, ...e.facts].filter(Boolean).map((s) => clip2(String(s), 140));
       return `- ${e.entity_type} ${e.name}${detail.length ? `: ${detail.join("; ")}` : ""}`;
@@ -24478,8 +25165,8 @@ __export(commands_exports, {
   projectsCommand: () => projectsCommand,
   snapshot: () => snapshot
 });
-import { existsSync as existsSync2, mkdirSync as mkdirSync2, readFileSync as readFileSync2, writeFileSync } from "node:fs";
-import { dirname as dirname4, join as join4, resolve } from "node:path";
+import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
+import { dirname as dirname5, join as join5, resolve } from "node:path";
 function openStore() {
   const path = defaultDbPath();
   const db = openDb(path);
@@ -24492,7 +25179,7 @@ function flag(args, name) {
 function readStdin() {
   if (process.stdin.isTTY) return "";
   try {
-    return readFileSync2(0, "utf8");
+    return readFileSync3(0, "utf8");
   } catch {
     return "";
   }
@@ -24511,18 +25198,28 @@ function projectFor(store, cwd) {
   store.setContext({ project: detected.project, project_path: detected.project_path });
   return detected;
 }
-function hookSessionStart() {
+async function hookSessionStart() {
   const input = stdinJson();
   const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
   let output;
   try {
     const { store, db } = openStore();
     const detected = projectFor(store, cwd);
-    const { context, status } = formatDigest(detected, store.digest(detected.project, { branch: detected.branch }));
+    const { context: context2, status } = formatDigest(detected, store.digest(detected.project, { branch: detected.branch }));
+    const device = deviceInfo();
+    const client = openRulesClient(db, { timeoutMs: 1500 });
+    if (client.mode === "local") await client.registerDevice(device);
+    const rules = await resolveForHook(client, { project: detected.project, org: detected.org, device: device.id });
     db.close();
+    const rulesNote = rules.text ? rules.stale ? " \xB7 rules (cached)" : " \xB7 rules" : rules.error ? " \xB7 rules unavailable" : "";
+    const pending = rules.pending ? ` \xB7 ${rules.pending} rule proposal(s) to review` : "";
+    const staleLine = rules.stale ? "\n(These rules come from the local cache: the server could not be reached.)" : "";
     output = {
-      hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context },
-      systemMessage: status
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: [rules.text ? rules.text + staleLine : "", context2].filter(Boolean).join("\n\n")
+      },
+      systemMessage: status + rulesNote + pending
     };
   } catch (error2) {
     output = { systemMessage: `task-runner: memory unavailable (${error2 instanceof Error ? error2.message : String(error2)})` };
@@ -24571,17 +25268,17 @@ function forgetCommand(args) {
   console.log(JSON.stringify(result));
 }
 function noteCommand(args) {
-  const text2 = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--"))).join(" ").trim();
-  if (!text2) fail2("Usage: task-runner-mcp note <text> [--cwd dir]");
+  const text3 = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--"))).join(" ").trim();
+  if (!text3) fail2("Usage: task-runner-mcp note <text> [--cwd dir]");
   const { store, db } = openStore();
   const detected = projectFor(store, resolve(flag(args, "--cwd") ?? process.cwd()));
-  const title = text2.length > 80 ? `${text2.slice(0, 77)}...` : text2;
+  const title = text3.length > 80 ? `${text3.slice(0, 77)}...` : text3;
   const type = flag(args, "--type") ?? "note";
   const saved = store.saveEntry({
     project: detected.project,
     type,
     title,
-    content: text2,
+    content: text3,
     scope: detected.branch ? "branch" : "project",
     scope_ref: detected.branch
   });
@@ -24599,21 +25296,21 @@ function exportCommand(args) {
     if (!out) fail2("--out <directory> is required for --format markdown");
     const files = renderVault(data);
     for (const f of files) {
-      const target = join4(resolve(out), f.path);
-      mkdirSync2(dirname4(target), { recursive: true });
-      writeFileSync(target, f.content);
+      const target = join5(resolve(out), f.path);
+      mkdirSync3(dirname5(target), { recursive: true });
+      writeFileSync2(target, f.content);
     }
     console.error(`Wrote ${files.length} files to ${resolve(out)}`);
     return;
   }
   if (format !== "json") fail2(`Unknown format '${format}'. Use json or markdown.`);
-  const text2 = JSON.stringify(data);
+  const text3 = JSON.stringify(data);
   if (out) {
-    mkdirSync2(dirname4(resolve(out)), { recursive: true });
-    writeFileSync(out, text2);
+    mkdirSync3(dirname5(resolve(out)), { recursive: true });
+    writeFileSync2(out, text3);
     console.error(`Exported to ${resolve(out)}`);
   } else {
-    process.stdout.write(`${text2}
+    process.stdout.write(`${text3}
 `);
   }
 }
@@ -24622,7 +25319,7 @@ function importCommand(args) {
   if (!file) fail2("Usage: task-runner-mcp import <file.json>");
   let data;
   try {
-    data = JSON.parse(readFileSync2(resolve(file), "utf8"));
+    data = JSON.parse(readFileSync3(resolve(file), "utf8"));
   } catch (error2) {
     return fail2(`Cannot read ${file}: ${error2 instanceof Error ? error2.message : String(error2)}`);
   }
@@ -24663,7 +25360,7 @@ function doctor() {
   const path = defaultDbPath();
   console.log(`task-runner-mcp ${SERVER_VERSION}`);
   console.log(`node         ${process.version}`);
-  console.log(`database     ${path} (${existsSync2(path) ? "exists" : "will be created on first use"})`);
+  console.log(`database     ${path} (${existsSync3(path) ? "exists" : "will be created on first use"})`);
   try {
     const { store, db } = openStore();
     const version2 = db.get("SELECT sqlite_version() AS v")?.v;
@@ -24702,6 +25399,7 @@ var init_commands = __esm({
     init_store();
     init_project();
     init_sqlite();
+    init_remote();
     init_digest();
     has = (args, name) => args.includes(name);
   }
@@ -24807,19 +25505,49 @@ var serve_exports = {};
 __export(serve_exports, {
   serve: () => serve
 });
-import { existsSync as existsSync3 } from "node:fs";
+import { existsSync as existsSync4 } from "node:fs";
 import { resolve as resolve3 } from "node:path";
 async function serve() {
   const { store, db } = openStore();
   const cwd = process.env.TASK_RUNNER_CWD || process.cwd();
   const session = new SessionHolder(() => {
     const detected = projectFor(store, cwd);
-    return { project: detected.project, project_path: detected.project_path, branch: detected.branch, pr: null };
+    return { project: detected.project, project_path: detected.project_path, branch: detected.branch, pr: null, org: detected.org };
   });
+  const device = deviceInfo();
+  const rulesClient = openRulesClient(db);
+  void rulesClient.registerDevice(device).catch(() => void 0);
   const server = createServer({
     store,
     session,
-    fileExists: (root, relative) => existsSync3(resolve3(root, relative)),
+    rules: {
+      async show() {
+        const s = session.get();
+        const resolved = await rulesClient.resolve({ project: s.project, org: s.org, device: device.id }).catch(async (error2) => {
+          const fallback = await resolveForHook(rulesClient, { project: s.project, org: s.org, device: device.id });
+          if (!fallback.text) throw error2;
+          return { text: fallback.text, parts: [], pending: 0, chars: fallback.text.length, truncated: false, stale: true };
+        });
+        return { text: resolved.text, parts: resolved.parts, pending: resolved.pending, stale: "stale" in resolved };
+      },
+      async propose(input) {
+        const s = session.get();
+        const scope = input.scope;
+        const made = await rulesClient.propose({
+          key: {
+            scope,
+            ref: scope === "org" ? input.ref ?? s.org : scope === "project" || scope === "project_device" ? input.ref ?? s.project : null,
+            device: scope === "device" || scope === "project_device" ? device.id : null
+          },
+          mode: input.mode,
+          text: input.text,
+          reason: input.reason,
+          author: "agent"
+        });
+        return { id: made.id, scope: made.scope };
+      }
+    },
+    fileExists: (root, relative) => existsSync4(resolve3(root, relative)),
     worklog: async (input) => {
       const range = resolveRange({
         today: input.range === "today",
@@ -24887,15 +25615,19 @@ var init_serve = __esm({
     init_session();
     init_report();
     init_scan();
+    init_remote();
     init_commands();
     init_worklog();
   }
 });
 
-// src/cli/rest.ts
-async function handleApi(store, req) {
+// src/core/rules-api.ts
+function isRulesPath(path) {
+  return path.startsWith("/rules") || path.startsWith("/devices");
+}
+function handleRulesApi(rules, req) {
   try {
-    return { status: 200, body: await route(store, req) };
+    return { status: 200, body: route(rules, req) };
   } catch (error2) {
     if (error2 instanceof StoreError) {
       const status = error2.code === "not_found" ? 404 : error2.code === "conflict" ? 409 : 400;
@@ -24904,12 +25636,99 @@ async function handleApi(store, req) {
     return { status: 500, body: { error: error2 instanceof Error ? error2.message : "Internal error" } };
   }
 }
-async function route(store, { method, path, query, body }) {
+function route(rules, { method, path, query, body }) {
+  const b = body ?? {};
+  switch (`${method} ${path}`) {
+    case "GET /rules/resolve":
+      return {
+        success: true,
+        ...rules.resolve({ project: query.get("project"), org: query.get("org"), device: query.get("device") }),
+        pending: rules.pendingCount()
+      };
+    case "GET /rules/docs":
+      return { success: true, docs: rules.listDocs() };
+    case "PUT /rules/docs":
+      return { success: true, ...rules.setDoc(keyOf(b), typeof b.body === "string" ? b.body : "", "user") };
+    case "DELETE /rules/docs":
+      return { success: true, ...rules.deleteDoc(need(query.get("id"), "id")) };
+    case "GET /rules/revisions":
+      return { success: true, revisions: rules.revisions(need(query.get("doc_id"), "doc_id")) };
+    case "GET /rules/proposals": {
+      const status = query.get("status") ?? "pending";
+      return { success: true, proposals: rules.listProposals(status) };
+    }
+    case "POST /rules/proposals":
+      return {
+        success: true,
+        proposal: rules.propose({
+          key: keyOf(b),
+          mode: text(b.mode),
+          text: need(text(b.text), "text"),
+          reason: text(b.reason) ?? null,
+          author: text(b.author) ?? "agent"
+        })
+      };
+    case "POST /rules/proposals/approve":
+      return { success: true, ...rules.approve(need(text(b.id), "id"), text(b.text)) };
+    case "POST /rules/proposals/reject":
+      return { success: true, ...rules.reject(need(text(b.id), "id")) };
+    case "GET /devices":
+      return { success: true, devices: rules.listDevices() };
+    case "POST /devices":
+      return {
+        success: true,
+        device: rules.registerDevice({ id: need(text(b.id), "id"), label: need(text(b.label), "label"), platform: text(b.platform) ?? null })
+      };
+    case "PUT /devices":
+      return { success: true, ...rules.renameDevice(need(text(b.id), "id"), need(text(b.label), "label")) };
+    default:
+      throw new StoreError("not_found", `No such endpoint: ${method} ${path}`);
+  }
+}
+var text, need, keyOf;
+var init_rules_api = __esm({
+  "src/core/rules-api.ts"() {
+    "use strict";
+    init_errors4();
+    init_rules();
+    text = (value) => typeof value === "string" && value !== "" ? value : void 0;
+    need = (value, name) => {
+      if (!value) throw new StoreError("invalid", `${name} is required`);
+      return value;
+    };
+    keyOf = (b) => ({
+      scope: need(text(b.scope), "scope"),
+      ref: text(b.ref) ?? null,
+      device: text(b.device) ?? null
+    });
+  }
+});
+
+// src/cli/rest.ts
+async function handleApi(store, req, rules) {
+  if (rules && isRulesPath(req.path)) return handleRulesApi(rules, req);
+  try {
+    return { status: 200, body: await route2(store, req) };
+  } catch (error2) {
+    if (error2 instanceof StoreError) {
+      const status = error2.code === "not_found" ? 404 : error2.code === "conflict" ? 409 : 400;
+      return { status, body: { error: error2.message } };
+    }
+    return { status: 500, body: { error: error2 instanceof Error ? error2.message : "Internal error" } };
+  }
+}
+async function route2(store, { method, path, query, body }) {
   const b = body ?? {};
   const key = `${method} ${path}`;
   switch (key) {
     case "GET /health":
-      return { ok: true, version: SERVER_VERSION };
+      return {
+        ok: true,
+        version: SERVER_VERSION,
+        mode: "local",
+        auth: "none",
+        features: ["memory", "tasks", "graph", "worklog", "rules"]
+      };
     case "GET /projects": {
       const projects = await store.listProjects();
       return { success: true, projects };
@@ -24917,24 +25736,24 @@ async function route(store, { method, path, query, body }) {
     case "GET /context": {
       const limit = query.get("limit");
       const out = await store.getContext({
-        project: need(query.get("project"), "project"),
+        project: need2(query.get("project"), "project"),
         branch: query.get("branch"),
         pr: query.get("pr"),
         all: query.get("all") === "true",
         limit: limit ? Number(limit) : 100,
-        type: text(query.get("type"))
+        type: text2(query.get("type"))
       });
       return { success: true, ...out };
     }
     case "POST /memory": {
       const saved = await store.saveEntry({
-        project: need(text(b.project_key), "project_key"),
-        type: need(text(b.type), "type"),
-        title: need(text(b.title), "title"),
-        content: need(text(b.content), "content"),
-        scope: text(b.scope),
-        scope_ref: text(b.scope_ref) ?? null,
-        tags: text(b.tags) ?? null
+        project: need2(text2(b.project_key), "project_key"),
+        type: need2(text2(b.type), "type"),
+        title: need2(text2(b.title), "title"),
+        content: need2(text2(b.content), "content"),
+        scope: text2(b.scope),
+        scope_ref: text2(b.scope_ref) ?? null,
+        tags: text2(b.tags) ?? null
       });
       return { success: true, ...saved };
     }
@@ -24942,28 +25761,28 @@ async function route(store, { method, path, query, body }) {
       return {
         success: true,
         ...await store.updateEntry({
-          id: need(text(b.id), "id"),
-          title: text(b.title),
-          content: text(b.content),
-          type: text(b.type),
+          id: need2(text2(b.id), "id"),
+          title: text2(b.title),
+          content: text2(b.content),
+          type: text2(b.type),
           tags: typeof b.tags === "string" ? b.tags : void 0
         })
       };
     case "DELETE /memory":
-      return { success: true, ...await store.deleteEntry(need(query.get("id"), "id")) };
+      return { success: true, ...await store.deleteEntry(need2(query.get("id"), "id")) };
     case "GET /search": {
       const limit = query.get("limit");
       const out = await store.searchEntries({
-        q: need(query.get("q"), "q"),
+        q: need2(query.get("q"), "q"),
         project: query.get("project"),
         limit: limit ? Number(limit) : void 0
       });
       return { success: true, ...out };
     }
     case "GET /graph/all":
-      return { success: true, ...await store.graphAll(need(query.get("project_key"), "project_key")) };
+      return { success: true, ...await store.graphAll(need2(query.get("project_key"), "project_key")) };
     case "GET /graph/stats": {
-      const stats = await store.graphStats(need(query.get("project_key"), "project_key"));
+      const stats = await store.graphStats(need2(query.get("project_key"), "project_key"));
       return {
         success: true,
         ...stats,
@@ -24983,8 +25802,8 @@ async function route(store, { method, path, query, body }) {
         type = found.entity_type;
       }
       const detail = await store.getEntity({
-        project: need(project, "project_key"),
-        name: need(name, "name"),
+        project: need2(project, "project_key"),
+        name: need2(name, "name"),
         entity_type: type
       });
       return { success: true, ...detail };
@@ -24993,34 +25812,34 @@ async function route(store, { method, path, query, body }) {
       return {
         success: true,
         ...await store.forget({
-          project: need(text(b.project_key), "project_key"),
-          name: need(text(b.name), "name"),
-          entity_type: text(b.entity_type)
+          project: need2(text2(b.project_key), "project_key"),
+          name: need2(text2(b.name), "name"),
+          entity_type: text2(b.entity_type)
         })
       };
     case "DELETE /relations":
-      return { success: true, ...await store.deleteRelation(need(query.get("id"), "id")) };
+      return { success: true, ...await store.deleteRelation(need2(query.get("id"), "id")) };
     case "GET /recall": {
       const limit = query.get("limit");
       const out = await store.recall({
-        project: need(query.get("project_key"), "project_key"),
-        q: need(query.get("q"), "q"),
-        entity_type: text(query.get("entity_type")),
+        project: need2(query.get("project_key"), "project_key"),
+        q: need2(query.get("q"), "q"),
+        entity_type: text2(query.get("entity_type")),
         limit: limit ? Number(limit) : void 0
       });
       return { success: true, ...out };
     }
     case "GET /tasks/groups":
-      return { success: true, groups: await store.listTaskGroups(need(query.get("project_key"), "project_key")) };
+      return { success: true, groups: await store.listTaskGroups(need2(query.get("project_key"), "project_key")) };
     case "GET /tasks/status": {
-      const project = need(query.get("project_key"), "project_key");
+      const project = need2(query.get("project_key"), "project_key");
       const out = await store.taskStatus({ project, task_group: query.get("task_group") });
       return { success: true, tasks: out.tasks };
     }
     case "GET /tasks/result": {
       const out = await store.taskResult({
-        project: need(query.get("project_key"), "project_key"),
-        task_id: need(query.get("task_id"), "task_id"),
+        project: need2(query.get("project_key"), "project_key"),
+        task_id: need2(query.get("task_id"), "task_id"),
         task_group: query.get("task_group")
       });
       return { success: true, ...out };
@@ -25029,7 +25848,7 @@ async function route(store, { method, path, query, body }) {
       return {
         success: true,
         ...await store.clearTasks({
-          project: need(query.get("project_key"), "project_key"),
+          project: need2(query.get("project_key"), "project_key"),
           task_group: query.get("task_group")
         })
       };
@@ -25039,14 +25858,15 @@ async function route(store, { method, path, query, body }) {
       throw new StoreError("not_found", `No such endpoint: ${method} ${path}`);
   }
 }
-var text, need;
+var text2, need2;
 var init_rest = __esm({
   "src/cli/rest.ts"() {
     "use strict";
     init_errors4();
     init_constants();
-    text = (value) => typeof value === "string" && value !== "" ? value : void 0;
-    need = (value, name) => {
+    init_rules_api();
+    text2 = (value) => typeof value === "string" && value !== "" ? value : void 0;
+    need2 = (value, name) => {
       if (!value) throw new StoreError("invalid", `${name} is required`);
       return value;
     };
@@ -25061,9 +25881,9 @@ __export(dashboard_exports, {
   findStaticDir: () => findStaticDir
 });
 import { execFile } from "node:child_process";
-import { existsSync as existsSync4, readFileSync as readFileSync3, statSync as statSync2 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync4, statSync as statSync2 } from "node:fs";
 import { createServer as createServer2 } from "node:http";
-import { dirname as dirname5, extname, join as join5, normalize, resolve as resolve4, sep } from "node:path";
+import { dirname as dirname6, extname, join as join6, normalize, resolve as resolve4, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 function readBody(req) {
   return new Promise((resolveBody, reject) => {
@@ -25117,13 +25937,13 @@ async function worklogApi(store, url) {
   }
 }
 function findStaticDir() {
-  const here = dirname5(fileURLToPath(import.meta.url));
-  for (const candidate of [join5(here, "dashboard"), join5(here, "..", "..", "dist", "dashboard")]) {
-    if (existsSync4(join5(candidate, "index.html"))) return candidate;
+  const here = dirname6(fileURLToPath(import.meta.url));
+  for (const candidate of [join6(here, "dashboard"), join6(here, "..", "..", "dist", "dashboard")]) {
+    if (existsSync5(join6(candidate, "index.html"))) return candidate;
   }
   return null;
 }
-function createDashboardServer(store, staticDir) {
+function createDashboardServer(store, staticDir, rules) {
   return createServer2(async (req, res) => {
     try {
       const host = req.headers.host ?? "";
@@ -25154,7 +25974,7 @@ function createDashboardServer(store, staticDir) {
           path: url.pathname.slice("/api".length) || "/",
           query: url.searchParams,
           body
-        });
+        }, rules);
         return sendJson(res, out.status, out.body);
       }
       if (method !== "GET" && method !== "HEAD") return sendJson(res, 405, { error: "Method not allowed" });
@@ -25167,14 +25987,14 @@ function createDashboardServer(store, staticDir) {
         );
       }
       const root = resolve4(staticDir);
-      let file = normalize(join5(root, decodeURIComponent(url.pathname)));
+      let file = normalize(join6(root, decodeURIComponent(url.pathname)));
       if (file !== root && !file.startsWith(root + sep)) return sendJson(res, 403, { error: "Forbidden" });
-      if (existsSync4(file) && statSync2(file).isDirectory()) file = join5(file, "index.html");
-      if (!existsSync4(file)) {
+      if (existsSync5(file) && statSync2(file).isDirectory()) file = join6(file, "index.html");
+      if (!existsSync5(file)) {
         if (extname(file)) return sendJson(res, 404, { error: "Not found" });
-        file = join5(root, "index.html");
+        file = join6(root, "index.html");
       }
-      return send(res, 200, readFileSync3(file), TYPES[extname(file)] ?? "application/octet-stream");
+      return send(res, 200, readFileSync4(file), TYPES[extname(file)] ?? "application/octet-stream");
     } catch (error2) {
       return sendJson(res, 500, { error: error2 instanceof Error ? error2.message : "Internal error" });
     }
@@ -25183,7 +26003,7 @@ function createDashboardServer(store, staticDir) {
 async function dashboard(args) {
   const port = Number(flag(args, "--port") ?? process.env.PORT ?? 4747);
   const { store, db } = openStore();
-  const server = createDashboardServer(store, findStaticDir());
+  const server = createDashboardServer(store, findStaticDir(), new RulesStore(db));
   server.on("error", (error2) => {
     console.error(error2.code === "EADDRINUSE" ? `Port ${port} is in use. Try --port <other>.` : error2.message);
     db.close();
@@ -25208,6 +26028,7 @@ var TYPES, LOCAL_HOST, MAX_BODY, sendJson;
 var init_dashboard = __esm({
   "src/cli/dashboard.ts"() {
     "use strict";
+    init_rules();
     init_commands();
     init_report();
     init_scan();
@@ -25230,12 +26051,206 @@ var init_dashboard = __esm({
   }
 });
 
+// src/cli/rules.ts
+var rules_exports = {};
+__export(rules_exports, {
+  loginCommand: () => loginCommand,
+  logoutCommand: () => logoutCommand,
+  rulesCommand: () => rulesCommand
+});
+import { execFileSync as execFileSync2 } from "node:child_process";
+import { mkdtempSync, readFileSync as readFileSync5, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as join7, resolve as resolve5 } from "node:path";
+import { createInterface } from "node:readline/promises";
+function words(args) {
+  return args.filter((a, i) => !a.startsWith("--") && !(i > 0 && valueFlags.has(args[i - 1])));
+}
+function context(args) {
+  const { store, db } = openStore();
+  const detected = detectProject(resolve5(flag(args, "--cwd") ?? process.cwd()), (p) => store.findProjectByPath(p));
+  const device = deviceInfo();
+  return { db, detected, device, client: openRulesClient(db) };
+}
+function scopeOf(args, c) {
+  const explicit = flag(args, "--scope");
+  const project = has2(args, "--project");
+  const org = has2(args, "--org");
+  const device = has2(args, "--device");
+  const scope = explicit ?? (project && device ? "project_device" : project ? "project" : org ? "org" : device ? "device" : "global");
+  if (!RULE_SCOPES.includes(scope)) throw new Error(`Unknown scope '${scope}'. Use ${RULE_SCOPES.join(", ")}.`);
+  const ref = flag(args, "--ref") ?? (scope === "org" ? c.detected.org : scope === "project" || scope === "project_device" ? c.detected.project : null);
+  return { scope, ref, device: flag(args, "--device-id") ?? (scope === "device" || scope === "project_device" ? c.device.id : null) };
+}
+async function readSecret(prompt) {
+  if (!process.stdin.isTTY) return readFileSync5(0, "utf8").trim();
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return (await rl.question(prompt)).trim();
+  } finally {
+    rl.close();
+  }
+}
+async function loginCommand(args) {
+  const url = (words(args)[0] ?? flag(args, "--url") ?? "").replace(/\/+$/, "");
+  if (!/^https?:\/\//.test(url)) throw new Error("Usage: task-runner-mcp login <https://your-worker.workers.dev> [--key KEY] [--label name]");
+  if (url.startsWith("http://") && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])/.test(url)) {
+    throw new Error("Refusing a plain http:// server: the key would travel unencrypted. Use https://.");
+  }
+  const key = flag(args, "--key") ?? process.env.TASK_RUNNER_REMOTE_KEY ?? await readSecret("Server key: ");
+  if (!key) throw new Error("No key given.");
+  const client = new RemoteRulesClient({ url, key });
+  try {
+    await client.listDevices();
+  } catch (error2) {
+    throw new Error(`Could not sign in to ${url}: ${error2 instanceof Error ? error2.message : error2}`);
+  }
+  const label = flag(args, "--label");
+  const device = label ? setDeviceLabel(label) : deviceInfo();
+  await client.registerDevice(device);
+  saveRemote({ url, key });
+  console.log(`Signed in to ${url} as device "${device.label}" (${device.id}).`);
+  console.log("Rules are now read from the server at the start of every session. Edit them on the web page or with `task-runner-mcp rules`.");
+}
+function logoutCommand() {
+  console.log(clearRemote() ? "Signed out. Rules come from this machine again." : "Not signed in.");
+}
+async function rulesCommand(args) {
+  const sub = words(args)[0] && !args[0]?.startsWith("--") ? args[0] : "show";
+  const rest = args[0] === sub ? args.slice(1) : args;
+  const c = context(args);
+  try {
+    const devices = await c.client.listDevices().catch(() => []);
+    const labels = new Map(devices.map((d) => [d.id, d.label]));
+    const where = c.client.mode === "remote" ? `server ${loadRemote()?.url}` : "this machine";
+    switch (sub) {
+      case "show": {
+        const r = await c.client.resolve({ project: c.detected.project, org: c.detected.org, device: c.device.id });
+        if (has2(rest, "--json")) {
+          console.log(JSON.stringify({ project: c.detected.project, org: c.detected.org, device: c.device, source: where, ...r }));
+          return;
+        }
+        console.log(`Rules for project ${c.detected.project}, org ${c.detected.org ?? "(none)"}, device ${c.device.label} (from ${where}):
+`);
+        console.log(r.text || '(no rules yet. Add some with `task-runner-mcp rules set "..."` or on the web page.)');
+        if (r.pending) console.log(`
+${r.pending} proposal(s) wait for approval: task-runner-mcp rules pending`);
+        return;
+      }
+      case "list": {
+        const docs = await c.client.listDocs();
+        if (docs.length === 0) console.log("No rule documents yet.");
+        for (const d of docs) {
+          console.log(`# ${describe(d, labels)}  (v${d.version}, ${d.body.length} chars)
+${d.body}
+`);
+        }
+        return;
+      }
+      case "set":
+      case "edit": {
+        const key = scopeOf(rest, c);
+        const docs = await c.client.listDocs();
+        const current = docs.find((d) => d.scope === key.scope && d.ref === (key.ref ?? "") && d.device === (key.device ?? ""))?.body ?? "";
+        let body;
+        if (sub === "edit") {
+          const dir = mkdtempSync(join7(tmpdir(), "tr-rules-"));
+          const file = join7(dir, "rules.md");
+          writeFileSync3(file, current);
+          const editor = process.env.VISUAL || process.env.EDITOR || "vi";
+          execFileSync2(editor, [file], { stdio: "inherit" });
+          body = readFileSync5(file, "utf8");
+          rmSync(dir, { recursive: true, force: true });
+        } else {
+          const file = flag(rest, "--file");
+          const typed = words(rest).join(" ");
+          const piped = !file && !typed && !process.stdin.isTTY ? readFileSync5(0, "utf8") : "";
+          const text3 = file ? readFileSync5(file, "utf8") : typed || piped;
+          if (!text3.trim() && !has2(rest, "--clear")) throw new Error("Give the rule text, --file <path>, or --clear to remove the document.");
+          body = has2(rest, "--append") && current ? `${current}
+${text3}` : has2(rest, "--clear") ? "" : text3;
+        }
+        const result = await c.client.setDoc(key, body);
+        console.log(result.removed ? `Removed the ${describe(key, labels)} rules.` : `Saved the ${describe(key, labels)} rules (v${result.version}).`);
+        return;
+      }
+      case "pending": {
+        const proposals = await c.client.listProposals("pending");
+        if (has2(rest, "--json")) {
+          console.log(JSON.stringify(proposals.map((p) => ({ ...p, where: describe(p, labels) }))));
+          return;
+        }
+        if (proposals.length === 0) console.log("No proposals are waiting.");
+        for (const p of proposals) {
+          console.log(`${p.id}  ${describe(p, labels)}  [${p.mode}] by ${p.author}${p.reason ? `
+  why: ${p.reason}` : ""}
+  ${p.text.replace(/\n/g, "\n  ")}
+`);
+        }
+        return;
+      }
+      case "approve": {
+        const id = words(rest)[0];
+        if (!id) throw new Error("Usage: task-runner-mcp rules approve <id> [--edit]");
+        let edited;
+        if (has2(rest, "--edit")) {
+          const p = (await c.client.listProposals("pending")).find((x) => x.id === id);
+          if (!p) throw new Error(`Proposal '${id}' is not pending`);
+          const dir = mkdtempSync(join7(tmpdir(), "tr-rules-"));
+          const file = join7(dir, "proposal.md");
+          writeFileSync3(file, p.text);
+          execFileSync2(process.env.VISUAL || process.env.EDITOR || "vi", [file], { stdio: "inherit" });
+          edited = readFileSync5(file, "utf8");
+          rmSync(dir, { recursive: true, force: true });
+        }
+        console.log(JSON.stringify(await c.client.approve(id, edited)));
+        return;
+      }
+      case "reject": {
+        const id = words(rest)[0];
+        if (!id) throw new Error("Usage: task-runner-mcp rules reject <id>");
+        console.log(JSON.stringify(await c.client.reject(id)));
+        return;
+      }
+      case "devices":
+        for (const d of devices) console.log(`${d.id}	${d.label}	${d.platform ?? ""}${d.id === c.device.id ? "	(this device)" : ""}`);
+        if (devices.length === 0) console.log("No devices registered.");
+        return;
+      case "rename-device": {
+        const label = words(rest).join(" ");
+        if (!label) throw new Error("Usage: task-runner-mcp rules rename-device <label>");
+        setDeviceLabel(label);
+        await c.client.registerDevice(deviceInfo());
+        console.log(JSON.stringify(await c.client.renameDevice(c.device.id, label)));
+        return;
+      }
+      default:
+        throw new Error("Usage: task-runner-mcp rules [show | list | set | edit | pending | approve <id> | reject <id> | devices | rename-device <label>]");
+    }
+  } finally {
+    c.db.close();
+  }
+}
+var has2, valueFlags, describe;
+var init_rules2 = __esm({
+  "src/cli/rules.ts"() {
+    "use strict";
+    init_rules();
+    init_project();
+    init_remote();
+    init_commands();
+    has2 = (args, name) => args.includes(name);
+    valueFlags = /* @__PURE__ */ new Set(["--scope", "--ref", "--device-id", "--file", "--key", "--label", "--cwd", "--url"]);
+    describe = (k, labels) => k.scope === "global" ? "global" : k.scope === "device" ? `device ${labels.get(k.device ?? "") ?? k.device}` : k.scope === "org" ? `org ${k.ref}` : k.scope === "project" ? `project ${k.ref}` : `project ${k.ref} on device ${labels.get(k.device ?? "") ?? k.device}`;
+  }
+});
+
 // src/cli/index.ts
 init_constants();
 var emitWarning = process.emitWarning.bind(process);
 process.emitWarning = ((warning, ...rest) => {
-  const text2 = typeof warning === "string" ? warning : warning.message;
-  if (text2.includes("SQLite")) return;
+  const text3 = typeof warning === "string" ? warning : warning.message;
+  if (text3.includes("SQLite")) return;
   return emitWarning(warning, ...rest);
 });
 function nodeIsTooOld() {
@@ -25255,6 +26270,9 @@ Usage: task-runner-mcp [command]
   worklog [--week|--today|--last-week|--month|--from D --to D] [--project k|.] [--exclude a*,b] [--format text|md|csv|json] [--detail]
                              Time per project and task: you vs the agent
   worklog pending | exported <project> <branch> | scan
+  rules [show|list|set|edit|pending|approve|reject|devices]
+                             Rules injected at session start: global, device, org, project
+  login <url> | logout       Keep rules on a Task Runner server (Cloudflare Worker)
   forget <name> [--type t]   Retire an entity in the current project
   note <text> [--type t]     Save a note for the current project
   dashboard [--port 4747]    Browse memory in a local web UI
@@ -25289,7 +26307,7 @@ async function main() {
         console.error("Usage: task-runner-mcp hook session-start");
         process.exit(1);
       }
-      (await Promise.resolve().then(() => (init_commands(), commands_exports))).hookSessionStart();
+      await (await Promise.resolve().then(() => (init_commands(), commands_exports))).hookSessionStart();
       return;
     }
     case "snapshot":
@@ -25303,6 +26321,20 @@ async function main() {
       const { worklogCommand: worklogCommand2 } = await Promise.resolve().then(() => (init_worklog(), worklog_exports));
       try {
         await worklogCommand2(args);
+      } catch (error2) {
+        console.error(error2 instanceof Error ? error2.message : error2);
+        process.exit(1);
+      }
+      return;
+    }
+    case "login":
+    case "logout":
+    case "rules": {
+      const mod = await Promise.resolve().then(() => (init_rules2(), rules_exports));
+      try {
+        if (command === "login") await mod.loginCommand(args);
+        else if (command === "logout") mod.logoutCommand();
+        else await mod.rulesCommand(args);
       } catch (error2) {
         console.error(error2 instanceof Error ? error2.message : error2);
         process.exit(1);

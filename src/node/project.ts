@@ -6,6 +6,8 @@ export interface DetectedProject {
   project: string;
   project_path: string;
   branch: string | null;
+  /** Owner of the git remote (or the pinned `org`), lowercase: the organization the project belongs to. */
+  org: string | null;
   /** False when the folder is not inside a git repository. */
   is_repo: boolean;
 }
@@ -34,13 +36,19 @@ export function keyFromRemote(url: string): string | null {
   return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`.toLowerCase();
 }
 
-/** A committed `.task-runner.json` such as `{ "project": "extranet" }` pins the key for every clone and worktree. */
-function pinnedProject(root: string): string | null {
+export function ownerFromRemote(url: string): string | null {
+  const parts = url.trim().replace(/\.git$/, "").split(/[/:]+/).filter(Boolean);
+  return parts.length >= 2 ? parts[parts.length - 2].toLowerCase() : null;
+}
+
+/** A committed `.task-runner.json` such as `{ "project": "extranet", "org": "acme" }` pins the key for every clone and worktree. */
+function pinned(root: string): { project: string | null; org: string | null } {
   try {
-    const parsed = JSON.parse(readFileSync(join(root, ".task-runner.json"), "utf8")) as { project?: unknown };
-    return typeof parsed.project === "string" && parsed.project.trim() ? parsed.project.trim() : null;
+    const parsed = JSON.parse(readFileSync(join(root, ".task-runner.json"), "utf8")) as { project?: unknown; org?: unknown };
+    const pick = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+    return { project: pick(parsed.project), org: pick(parsed.org) };
   } catch {
-    return null;
+    return { project: null, org: null };
   }
 }
 
@@ -70,13 +78,16 @@ export function detectProject(
   const common = git(real, "rev-parse", "--path-format=absolute", "--git-common-dir");
   const mainRoot = common && basename(common) === ".git" ? dirname(common) : root;
 
+  const pin = pinned(root);
   const project =
     env.TASK_RUNNER_PROJECT ||
-    pinnedProject(root) ||
+    pin.project ||
     lookupByPath?.(root) ||
     (mainRoot !== root ? lookupByPath?.(mainRoot) : null) ||
     (remote ? keyFromRemote(remote) : null) ||
     basename(root);
 
-  return { project, project_path: root, branch, is_repo: top !== null };
+  const org = env.TASK_RUNNER_ORG || pin.org || (remote ? ownerFromRemote(remote) : null);
+
+  return { project, project_path: root, branch, org, is_repo: top !== null };
 }

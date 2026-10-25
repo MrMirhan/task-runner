@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Detail, SearchState, Snapshot, Tab, WorklogView } from '../types'
+import type { Detail, RulesView, SearchState, Snapshot, Tab, WorklogView } from '../types'
 
 const PANE = 'brain'
 const TITLE = 'Task Runner'
@@ -11,6 +11,7 @@ const tabValue = atom({ plugin: 'task-runner', key: 'tab' } as const, 'tasks')
 const detailValue = atom({ plugin: 'task-runner', key: 'detail' } as const, null)
 const searchValue = atom({ plugin: 'task-runner', key: 'search' } as const, null)
 const worklogValue = atom({ plugin: 'task-runner', key: 'worklog' } as const, null)
+const rulesValue = atom({ plugin: 'task-runner', key: 'rules' } as const, null)
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'tasks', label: 'Tasks' },
@@ -18,6 +19,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'graph', label: 'Graph' },
   { id: 'search', label: 'Search' },
   { id: 'time', label: 'Time' },
+  { id: 'rules', label: 'Rules' },
 ]
 
 const GLYPH: Record<string, string> = { completed: '✓', failed: '✗', running: '▶', pending: '·' }
@@ -25,7 +27,7 @@ const GLYPH: Record<string, string> = { completed: '✓', failed: '✗', running
 const MEMORY_TOOL = /^mcp__(?:plugin_task-runner_)?task-runner__(\w+)$/
 const WRITES = new Set([
   'remember', 'add_facts', 'correct_fact', 'link', 'forget', 'save_memory',
-  'create_task_group', 'complete_task', 'fail_task',
+  'create_task_group', 'complete_task', 'fail_task', 'rules',
 ])
 const SAVES_MEMORY = new Set(['remember', 'add_facts', 'correct_fact', 'link', 'save_memory'])
 const FILE_EDITS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
@@ -34,6 +36,7 @@ const OWN_TOOL = /^mcp__plugin_task-runner_task-runner__(\w+)$/
 const PROMPT_FREE = new Set([
   'set_context', 'list_projects', 'get_context', 'save_memory', 'remember', 'correct_fact', 'link', 'recall',
   'what_do_i_know', 'forget', 'graph_stats', 'create_task_group', 'get_next_task', 'complete_task', 'get_task_status',
+  'rules', 'worklog',
 ])
 
 // Work nobody awaits must not surface as an unhandled rejection when the session is gone.
@@ -98,6 +101,29 @@ async function loadWorklog($: EngineInterface): Promise<void> {
   } catch {
     $.ui.log('task-runner: could not read the time report')
   }
+}
+
+async function loadRules($: EngineInterface): Promise<void> {
+  const shown = await cliText($, ['rules', 'show', '--json'])
+  const pending = await cliText($, ['rules', 'pending', '--json'])
+  if (!shown) return
+  try {
+    const r = JSON.parse(shown) as { parts: RulesView['parts']; chars: number; source: string }
+    const view: RulesView = {
+      parts: r.parts,
+      chars: r.chars,
+      source: r.source,
+      pending: pending ? (JSON.parse(pending) as RulesView['pending']) : [],
+    }
+    await update($, rulesValue, () => view)
+  } catch {
+    $.ui.log('task-runner: could not read the rules')
+  }
+}
+
+async function decide($: EngineInterface, action: 'approve' | 'reject', id: string): Promise<void> {
+  await cliText($, ['rules', action, id])
+  await loadRules($)
 }
 
 function hours(seconds: number): string {
@@ -222,6 +248,8 @@ function toastFor(tool: string, args: Record<string, unknown>): string | null {
       return 'note saved: ' + text('title')
     case 'create_task_group':
       return 'task group created: ' + text('name')
+    case 'rules':
+      return text('action') === 'propose' ? 'the agent proposed a rule. Review it with /rules or in the Rules tab' : null
     case 'complete_task':
       return 'task ' + text('task_id') + ' done'
     case 'fail_task':
@@ -249,6 +277,7 @@ export const register: Register = (on, options) => {
       await $.command.register({ name: 'brain', description: 'Open the task and memory panel' })
       await $.command.register({ name: 'recall', description: 'Search project memory', argumentHint: '<keywords>' })
       await $.command.register({ name: 'remember', description: 'Save a note to project memory', argumentHint: '<text>' })
+      await $.command.register({ name: 'rules', description: 'Show your rules, or approve or reject a proposal', argumentHint: '[approve|reject <id>]' })
       await $.command.register({ name: 'worklog', description: 'Show time spent by you and the agent', argumentHint: '[today|week|last-week|month]' })
     } catch (error) {
       $.ui.log('task-runner: command registration skipped: ' + String(error))
@@ -279,6 +308,19 @@ export const register: Register = (on, options) => {
       ...raw.search.entries.map(entry => '[' + entry.type + '] ' + entry.title),
     ]
     return { text: lines.length ? lines.join('\n') : 'Nothing found for "' + e.args.trim() + '".' }
+  })
+
+  on('command.run', { command: 'rules' }, async ($, e) => {
+    const [action, id] = e.args.trim().split(/\s+/)
+    if (action === 'approve' || action === 'reject') {
+      if (!id) return { text: 'Usage: /rules ' + action + ' <id>' }
+      const out = await cliText($, ['rules', action, id])
+      background(loadRules($))
+      return { text: out ?? 'task-runner: could not ' + action + ' ' + id }
+    }
+    const shown = await cliText($, ['rules', 'show'])
+    const pending = await cliText($, ['rules', 'pending'])
+    return { text: [shown ?? 'task-runner: rules are unavailable.', pending && !pending.startsWith('No proposals') ? '\nWaiting for your decision:\n' + pending : ''].join('') }
   })
 
   on('command.run', { command: 'worklog' }, async ($, e) => {
@@ -327,6 +369,7 @@ export const register: Register = (on, options) => {
         if (message) $.ui.toast('task-runner: ' + message)
       }
       background(refresh($))
+      if (name === 'rules') background(loadRules($))
     }
     return ran
   })
@@ -375,6 +418,7 @@ export const register: Register = (on, options) => {
     const detail = await read($, detailValue)
     const search = await read($, searchValue)
     const worklog = await read($, worklogValue)
+    const rules = await read($, rulesValue)
     const width = Math.max(24, e.props.bodyColumns)
 
     const tabs = (
@@ -387,6 +431,7 @@ export const register: Register = (on, options) => {
             onPress={async () => {
               await update($, tabValue, () => item.id)
               if (item.id === 'time') await loadWorklog($)
+              if (item.id === 'rules') await loadRules($)
             }}
           />
         ))}
@@ -468,6 +513,38 @@ export const register: Register = (on, options) => {
               </Button>
             ))
           )}
+        </Box>
+      )
+    } else if (tab === 'rules') {
+      body = !rules ? (
+        <Text dimColor>Reading your rules…</Text>
+      ) : (
+        <Box flexDirection="column">
+          <Text bold>Rules for this session ({rules.chars} characters)</Text>
+          <Text dimColor>from {rules.source}</Text>
+          {rules.parts.length === 0 ? (
+            <Text dimColor>No rules yet. Add some with `task-runner-mcp rules set "..."` or on the web page.</Text>
+          ) : (
+            rules.parts.map(part => (
+              <Text>
+                · {part.label} <Text dimColor>{part.chars} chars</Text>
+              </Text>
+            ))
+          )}
+          <Text bold>{rules.pending.length ? 'Waiting for your decision' : 'No proposals waiting'}</Text>
+          {rules.pending.map(proposal => (
+            <Box flexDirection="column" borderStyle="round" paddingX={1}>
+              <Text bold>
+                {proposal.where} <Text dimColor>{proposal.mode} by {proposal.author}</Text>
+              </Text>
+              {proposal.reason ? <Text dimColor>why: {proposal.reason}</Text> : null}
+              <Text>{proposal.text}</Text>
+              <Box flexDirection="row" columnGap={1}>
+                <Button key={'approve-' + proposal.id} label="Approve" variant="primary" onPress={() => decide($, 'approve', proposal.id)} />
+                <Button key={'reject-' + proposal.id} label="Reject" onPress={() => decide($, 'reject', proposal.id)} />
+              </Box>
+            </Box>
+          ))}
         </Box>
       )
     } else if (tab === 'time') {

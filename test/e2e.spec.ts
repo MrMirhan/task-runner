@@ -174,3 +174,27 @@ test("the worklog tool reads transcripts through the real server", async () => {
     await client.close();
   }
 });
+
+test("local rules reach the session hook with org and project sections", () => {
+  const home = mkdtempSync(join(tmpdir(), "tr-home-"));
+  const repo = join(mkdtempSync(join(tmpdir(), "tr-rules-repo-")), "shop");
+  mkdirSync(repo);
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repo });
+  execFileSync("git", ["remote", "add", "origin", "git@github.com:Acme/Shop.git"], { cwd: repo });
+  const run = (args: string[], input = "") =>
+    execFileSync(process.execPath, ["--no-warnings", entry, ...args], { cwd: repo, env: env(home), encoding: "utf8", input });
+
+  run(["rules", "set", "Be", "brief."]);
+  run(["rules", "set", "--org", "Use", "Conventional", "Commits."]);
+  run(["rules", "set", "--project", "Skip", "billing."]);
+  writeFileSync(join(repo, ".task-runner.json"), JSON.stringify({ org: "acme-corp" }));
+  run(["rules", "set", "--org", "Pinned", "org", "rule."]);
+
+  const hook = JSON.parse(run(["hook", "session-start"], JSON.stringify({ cwd: repo })));
+  const context: string = hook.hookSpecificOutput.additionalContext;
+  assert.match(context, /## Everywhere\nBe brief\./);
+  assert.match(context, /## Organization acme-corp\nPinned org rule\./);
+  assert.match(context, /## Project acme-shop\nSkip billing\./);
+  assert.doesNotMatch(context, /Use Conventional Commits/);
+  assert.ok(context.indexOf("RULES from the user") < context.indexOf("task-runner memory for"));
+});

@@ -33,6 +33,8 @@ test("slugify handles Turkish letters and empty input", () => {
 test("ftsQuery quotes, dedupes and prefixes tokens", () => {
   assert.equal(ftsQuery('Redis AND "cache"'), '"redis"* OR "cache"*');
   assert.equal(ftsQuery("how do we deploy the worker"), '"how"* OR "deploy"* OR "worker"*');
+  assert.equal(ftsQuery("migrations"), '"migrations"* OR "migrat"*');
+  assert.equal(ftsQuery("tokens"), '"tokens"* OR "token"*');
   assert.equal(ftsQuery("the and of"), '"the"* OR "and"* OR "of"*');
   assert.equal(ftsQuery("a a"), '"a"');
   assert.equal(ftsQuery("***"), null);

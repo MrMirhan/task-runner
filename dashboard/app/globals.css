@@ -173,3 +173,44 @@ body {
     color-mix(in srgb, var(--warn) 40%, var(--surface)) 4px 8px
   );
 }
+
+/* Rules: one colour per scope in the size bar; the legend always names the part as well. */
+:root {
+  --scope-global: #7db3ff;
+  --scope-device: #4ade80;
+  --scope-org: #fbbf24;
+  --scope-project: #c4b5fd;
+  --scope-project_device: #f9a8d4;
+}
+:root[data-theme="light"] {
+  --scope-global: #1d4ed8;
+  --scope-device: #15803d;
+  --scope-org: #b45309;
+  --scope-project: #6d28d9;
+  --scope-project_device: #be185d;
+}
+
+.field-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+textarea.field {
+  resize: vertical;
+}
+.field:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  min-width: 0;
+}
+.panel-title {
+  margin-bottom: 0.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}

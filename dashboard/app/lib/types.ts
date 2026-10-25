@@ -241,3 +241,71 @@ export interface WorklogReport {
   days: WorklogDay[];
   totals: WorklogTotals;
 }
+
+// Server info: GET /api/health (no auth). `features` decides which tabs exist.
+export interface Health {
+  ok: boolean;
+  version: string;
+  mode: "local" | "remote";
+  auth: "none" | "bearer";
+  features: string[];
+}
+
+// Rules (GET/PUT /api/rules/*, /api/devices). Timestamps are unix seconds.
+export type RuleScope = "global" | "device" | "org" | "project" | "project_device";
+
+export const MAX_DOC_CHARS = 4000;
+export const MAX_RESOLVED_CHARS = 8000;
+
+export interface RuleDoc {
+  id: string;
+  scope: RuleScope;
+  ref: string;
+  device: string;
+  body: string;
+  version: number;
+  updated_at: number;
+}
+
+export interface RuleRevision {
+  version: number;
+  body: string;
+  source: string;
+  at: number;
+}
+
+export interface Proposal {
+  id: string;
+  scope: RuleScope;
+  ref: string;
+  device: string;
+  mode: "append" | "replace";
+  text: string;
+  reason: string | null;
+  author: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: number;
+  decided_at: number | null;
+}
+
+export interface Device {
+  id: string;
+  label: string;
+  platform: string | null;
+  first_seen: number;
+  last_seen: number;
+}
+
+export interface ResolvedPart {
+  scope: RuleScope;
+  label: string;
+  chars: number;
+}
+
+export interface ResolvedRules {
+  text: string;
+  chars: number;
+  parts: ResolvedPart[];
+  truncated: boolean;
+  pending: number;
+}

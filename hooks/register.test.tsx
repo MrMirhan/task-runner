@@ -293,3 +293,68 @@ test('/worklog prints the report and rejects unknown periods', async ($, on) => 
 
   expect((await $.command.run({ command: 'worklog', args: 'fortnight' })).text).toMatch(/Usage/)
 })
+
+const RULES_SHOWN = {
+  parts: [
+    { label: 'Everywhere', chars: 40 },
+    { label: 'Project acme-shop', chars: 120 },
+  ],
+  chars: 190,
+  source: 'server https://rules.example.dev',
+}
+const PENDING = [
+  { id: 'prop_1', where: 'org acme', mode: 'append', author: 'agent', reason: 'asked twice', text: 'Use Conventional Commits.' },
+]
+
+test('the Rules tab lists proposals and approving calls the CLI', async ($, on) => {
+  const calls: string[][] = []
+  on('session.cwd', () => ({ value: '/work/acme' }))
+  on('ui.log', () => ({ value: undefined }))
+  on('process.run', (_, e) => {
+    calls.push([...e.argv])
+    const out = e.argv.includes('--json') ? (e.argv.includes('pending') ? PENDING : RULES_SHOWN) : e.argv.includes('approve') ? { approved: 'prop_1' } : SNAPSHOT
+    return { value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'refresh' })
+  await ui.press({ key: 'tab-rules' })
+
+  expect(await ui.find({ type: 'Text', text: /Rules for this session \(190 characters\)/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Project acme-shop 120 chars/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Use Conventional Commits.' })).toBeDefined()
+
+  await ui.press({ key: 'approve-prop_1' })
+  expect(calls.some(c => c.includes('approve') && c.includes('prop_1'))).toBe(true)
+  await ui.unmount()
+})
+
+test('a rule proposed by the agent raises a toast', async ($, on) => {
+  const toasts: string[] = []
+  stubCli(on, toasts)
+  on('tool.call', () => ({ result: 'ok' }))
+
+  await $.tool.call({ tool: 'mcp__plugin_task-runner_task-runner__rules', action: 'propose', scope: 'global', text: 'x' })
+  await $.tool.call({ tool: 'mcp__plugin_task-runner_task-runner__rules', action: 'show' })
+  expect(toasts.filter(t => /proposed a rule/.test(t)).length).toBe(1)
+})
+
+test('/rules shows the rules and approves by id', async ($, on) => {
+  const calls: string[][] = []
+  on('session.cwd', () => ({ value: '/work/acme' }))
+  on('ui.log', () => ({ value: undefined }))
+  on('process.run', (_, e) => {
+    calls.push([...e.argv])
+    const stdout = e.argv.includes('show') ? 'RULES from the user\n## Everywhere\nBe brief.' : e.argv.includes('pending') ? 'No proposals are waiting.' : '{"approved":"prop_9"}'
+    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+
+  const shown = await $.command.run({ command: 'rules', args: '' })
+  expect(shown.text).toContain('Be brief.')
+  expect(shown.text).not.toContain('Waiting for your decision')
+
+  const approved = await $.command.run({ command: 'rules', args: 'approve prop_9' })
+  expect(approved.text).toContain('prop_9')
+  expect(calls.some(c => c.includes('approve') && c.includes('prop_9'))).toBe(true)
+  expect((await $.command.run({ command: 'rules', args: 'reject' })).text).toMatch(/Usage/)
+})

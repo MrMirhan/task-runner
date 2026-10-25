@@ -1,6 +1,9 @@
 import type { Db } from "./db.ts";
 
 const FTS_TOKENIZER = "porter unicode61 remove_diacritics 2";
+// Porter stems English only and disagrees with prefix queries ("deploy" becomes "deploi"), so v4 drops it
+// and the query side adds its own short stems instead.
+const FTS_TOKENIZER_V4 = "unicode61 remove_diacritics 2";
 
 const migrations: Array<(db: Db) => void> = [
   (db) => {
@@ -158,6 +161,33 @@ const migrations: Array<(db: Db) => void> = [
         PRIMARY KEY (project_key, branch, target)
       );
     `);
+  },
+  (db) => {
+    db.exec(`
+      ALTER TABLE entities ADD COLUMN keywords TEXT;
+      DROP TABLE entities_fts;
+      CREATE VIRTUAL TABLE entities_fts USING fts5(
+        name, keywords, summary, facts,
+        tokenize = '${FTS_TOKENIZER_V4}'
+      );
+      DROP TABLE entries_fts;
+      CREATE VIRTUAL TABLE entries_fts USING fts5(
+        title, content, tags,
+        tokenize = '${FTS_TOKENIZER_V4}'
+      );
+    `);
+    // The trigram index is a fallback for word parts and typos; older SQLite builds lack it.
+    for (const tokenizer of ["trigram remove_diacritics 1", "trigram"]) {
+      try {
+        db.exec(`CREATE VIRTUAL TABLE entities_tri USING fts5(body, tokenize = '${tokenizer}')`);
+        break;
+      } catch {
+        // try the next form
+      }
+    }
+    db.run(
+      "INSERT INTO schema_meta (key, value) VALUES ('reindex', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    );
   },
 ];
 

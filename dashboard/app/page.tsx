@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { errorMessage, fetchApi, qs } from "./lib/api";
-import type { GraphData, GraphEntity, GraphStats, MemoryEntry, Project, ScopeFilter, TaskGroup } from "./lib/types";
+import { errorMessage, fetchApi, fetchApiSignal, qs } from "./lib/api";
+import { SessionProvider, useSession } from "./lib/session";
+import { confirmDiscard } from "./lib/unsaved";
+import type { GraphData, GraphEntity, GraphStats, MemoryEntry, Project, Proposal, ScopeFilter, TaskGroup } from "./lib/types";
 import { GLOBAL_PROJECT } from "./lib/types";
 import ProjectSelector from "./components/ProjectSelector";
 import StatsCards from "./components/StatsCards";
@@ -12,9 +14,11 @@ import EntityPanel from "./components/EntityPanel";
 import EntryList from "./components/EntryList";
 import TasksView from "./components/TasksView";
 import TimeView from "./components/TimeView";
-import ThemeToggle from "./components/ThemeToggle";
+import HeaderActions from "./components/HeaderActions";
+import RulesView from "./components/rules/RulesView";
+import SignIn from "./components/SignIn";
 
-type Tab = "graph" | "entries" | "tasks" | "time";
+type Tab = "graph" | "entries" | "tasks" | "time" | "rules";
 
 const PROJECT_KEY = "task-runner-project";
 
@@ -38,6 +42,63 @@ function scopeId(s: ScopeFilter): string {
 }
 
 export default function Home() {
+  return (
+    <SessionProvider>
+      <Gate />
+    </SessionProvider>
+  );
+}
+
+function Gate() {
+  const { phase, health, error, retry } = useSession();
+
+  if (phase === "loading") {
+    return (
+      <div className="flex min-h-dvh flex-col">
+        <Notice title="Loading…" />
+      </div>
+    );
+  }
+  if (phase === "error") {
+    return (
+      <div className="flex min-h-dvh flex-col">
+        <Notice title="Cannot reach the server">
+          <p role="alert">{error}</p>
+          <button type="button" onClick={retry} className="btn btn-primary mt-4">
+            Try again
+          </button>
+        </Notice>
+      </div>
+    );
+  }
+  if (phase === "signin") return <SignIn />;
+  return health?.features.includes("memory") ? <LocalApp /> : <RemoteApp />;
+}
+
+/** The remote server stores rules and devices only: no projects, graph, notes or tasks. */
+function RemoteApp() {
+  const [reloadKey, setReloadKey] = useState(0);
+  return (
+    <div className="flex min-h-dvh flex-col md:h-dvh">
+      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface px-4 py-3">
+        <h1 className="whitespace-nowrap text-base font-bold">Task Runner</h1>
+        <span className="text-sm text-muted">Rules</span>
+        <HeaderActions onRefresh={() => setReloadKey((k) => k + 1)} />
+      </header>
+      <main className="flex flex-1 flex-col md:min-h-0">
+        <div className="flex flex-1 flex-col px-4 pb-4 pt-3 md:min-h-0">
+          <div className="card flex min-h-[480px] flex-1 overflow-hidden md:min-h-0">
+            <div className="relative min-w-0 flex-1 p-4 md:overflow-y-auto">
+              <RulesView refreshKey={reloadKey} />
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function LocalApp() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [projectKey, setProjectKey] = useState<string | null>(null);
@@ -56,6 +117,20 @@ export default function Home() {
   const [searchStatus, setSearchStatus] = useState<string | null>(null);
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  const [pendingRules, setPendingRules] = useState(0);
+  useEffect(() => {
+    const ctl = new AbortController();
+    fetchApiSignal<{ proposals: Proposal[] }>("/rules/proposals?status=pending", ctl.signal)
+      .then((d) => setPendingRules(d.proposals.length))
+      .catch(() => undefined);
+    return () => ctl.abort();
+  }, [reloadKey]);
+
+  function selectTab(next: Tab) {
+    if (tab === "rules" && next !== "rules" && !confirmDiscard()) return;
+    setTab(next);
+  }
 
   useEffect(() => {
     let live = true;
@@ -148,28 +223,71 @@ export default function Home() {
     { key: "entries", label: "Notes" },
     { key: "tasks", label: "Tasks" },
     { key: "time", label: "Time" },
+    { key: "rules", label: "Rules" },
   ];
 
-  let body: React.ReactNode;
-  if (loadError) {
-    body = (
-      <Notice title="Cannot load projects">
-        <p role="alert">{loadError}</p>
-        <button type="button" onClick={reload} className="btn btn-primary mt-4">
-          Try again
+  const tabGroup = (
+    <div className="flex flex-wrap gap-1" role="group" aria-label="View">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          onClick={() => selectTab(t.key)}
+          aria-pressed={tab === t.key}
+          className={`btn ${tab === t.key ? "!border-link !text-link" : ""}`}
+        >
+          {t.label}
+          {t.key === "tasks" && taskGroups.length > 0 && (
+            <span className="text-xs text-muted">({taskGroups.reduce((s, g) => s + g.total, 0)})</span>
+          )}
+          {t.key === "rules" && pendingRules > 0 && (
+            <span className="rounded-full bg-[var(--accent-bg)] px-1.5 text-xs font-medium text-white">
+              {pendingRules}
+              <span className="sr-only"> pending {pendingRules === 1 ? "proposal" : "proposals"}</span>
+            </span>
+          )}
         </button>
-      </Notice>
+      ))}
+    </div>
+  );
+
+  let body: React.ReactNode;
+  if (tab === "rules") {
+    body = (
+      <div className="flex flex-1 flex-col gap-3 px-4 pb-4 pt-3 md:min-h-0">
+        {tabGroup}
+        <div className="card flex min-h-[480px] flex-1 overflow-hidden md:min-h-0">
+          <div className="relative min-w-0 flex-1 p-4 md:overflow-y-auto">
+            <RulesView refreshKey={reloadKey} onPendingChange={setPendingRules} />
+          </div>
+        </div>
+      </div>
+    );
+  } else if (loadError) {
+    body = (
+      <div className="flex flex-1 flex-col px-4 pt-3">
+        {tabGroup}
+        <Notice title="Cannot load projects">
+          <p role="alert">{loadError}</p>
+          <button type="button" onClick={reload} className="btn btn-primary mt-4">
+            Try again
+          </button>
+        </Notice>
+      </div>
     );
   } else if (!projects) {
     body = <Notice title="Loading…" />;
   } else if (projects.length === 0) {
     body = (
-      <Notice>
-        <p>No memory yet. Start a Claude Code session with the task-runner plugin or call the remember tool.</p>
-        <button type="button" onClick={reload} className="btn mt-4">
-          Check again
-        </button>
-      </Notice>
+      <div className="flex flex-1 flex-col px-4 pt-3">
+        {tabGroup}
+        <Notice>
+          <p>No memory yet. Start a Claude Code session with the task-runner plugin or call the remember tool.</p>
+          <button type="button" onClick={reload} className="btn mt-4">
+            Check again
+          </button>
+        </Notice>
+      </div>
     );
   } else if (projectKey) {
     body = (
@@ -183,22 +301,7 @@ export default function Home() {
         )}
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="flex gap-1" role="group" aria-label="View">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                aria-pressed={tab === t.key}
-                className={`btn ${tab === t.key ? "!border-link !text-link" : ""}`}
-              >
-                {t.label}
-                {t.key === "tasks" && taskGroups.length > 0 && (
-                  <span className="text-xs text-muted">({taskGroups.reduce((s, g) => s + g.total, 0)})</span>
-                )}
-              </button>
-            ))}
-          </div>
+          {tabGroup}
 
           {tab === "entries" && scopes.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Scope filter">
@@ -279,14 +382,9 @@ export default function Home() {
     <div className="flex min-h-dvh flex-col md:h-dvh">
       <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface px-4 py-3">
         <h1 className="whitespace-nowrap text-base font-bold">Task Runner</h1>
-        <ProjectSelector projects={projects ?? []} selected={projectKey} onSelect={selectProject} />
-        {projectKey && <SearchBar key={projectKey} onSearch={search} status={searchStatus} />}
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <button type="button" onClick={reload} className="btn">
-            Refresh
-          </button>
-          <ThemeToggle />
-        </div>
+        {tab !== "rules" && <ProjectSelector projects={projects ?? []} selected={projectKey} onSelect={selectProject} />}
+        {tab !== "rules" && projectKey && <SearchBar key={projectKey} onSearch={search} status={searchStatus} />}
+        <HeaderActions onRefresh={reload} />
       </header>
       <main className="flex flex-1 flex-col md:min-h-0">{body}</main>
     </div>

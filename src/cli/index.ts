@@ -27,6 +27,9 @@ Usage: task-runner-mcp [command]
   worklog [--week|--today|--last-week|--month|--from D --to D] [--project k|.] [--exclude a*,b] [--format text|md|csv|json] [--detail]
                              Time per project and task: you vs the agent
   worklog pending | exported <project> <branch> | scan
+  rules [show|list|set|edit|pending|approve|reject|devices]
+                             Rules injected at session start: global, device, org, project
+  login <url> | logout       Keep rules on a Task Runner server (Cloudflare Worker)
   forget <name> [--type t]   Retire an entity in the current project
   note <text> [--type t]     Save a note for the current project
   dashboard [--port 4747]    Browse memory in a local web UI
@@ -64,7 +67,7 @@ async function main(): Promise<void> {
         console.error("Usage: task-runner-mcp hook session-start");
         process.exit(1);
       }
-      (await import("./commands.ts")).hookSessionStart();
+      await (await import("./commands.ts")).hookSessionStart();
       return;
     }
     case "snapshot":
@@ -78,6 +81,20 @@ async function main(): Promise<void> {
       const { worklogCommand } = await import("./worklog.ts");
       try {
         await worklogCommand(args);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : error);
+        process.exit(1);
+      }
+      return;
+    }
+    case "login":
+    case "logout":
+    case "rules": {
+      const mod = await import("./rules.ts");
+      try {
+        if (command === "login") await mod.loginCommand(args);
+        else if (command === "logout") mod.logoutCommand();
+        else await mod.rulesCommand(args);
       } catch (error) {
         console.error(error instanceof Error ? error.message : error);
         process.exit(1);

@@ -1,19 +1,11 @@
 import { StoreError } from "../core/errors.ts";
 import type { StoreApi } from "../core/api.ts";
 import { SERVER_VERSION } from "../core/constants.ts";
+import type { ApiRequest, ApiResponse } from "../core/http.ts";
+import { handleRulesApi, isRulesPath } from "../core/rules-api.ts";
+import type { RulesStore } from "../core/rules.ts";
 
-export interface ApiRequest {
-  method: string;
-  /** Path below /api, e.g. "/graph/all". */
-  path: string;
-  query: URLSearchParams;
-  body: unknown;
-}
-
-export interface ApiResponse {
-  status: number;
-  body: unknown;
-}
+export type { ApiRequest, ApiResponse } from "../core/http.ts";
 
 type Body = Record<string, unknown>;
 
@@ -46,7 +38,8 @@ const need = (value: string | null | undefined, name: string): string => {
  *   DELETE /tasks?project_key&task_group
  *   GET    /export?project
  */
-export async function handleApi(store: StoreApi, req: ApiRequest): Promise<ApiResponse> {
+export async function handleApi(store: StoreApi, req: ApiRequest, rules?: RulesStore): Promise<ApiResponse> {
+  if (rules && isRulesPath(req.path)) return handleRulesApi(rules, req);
   try {
     return { status: 200, body: await route(store, req) };
   } catch (error) {
@@ -64,7 +57,13 @@ async function route(store: StoreApi, { method, path, query, body }: ApiRequest)
 
   switch (key) {
     case "GET /health":
-      return { ok: true, version: SERVER_VERSION };
+      return {
+        ok: true,
+        version: SERVER_VERSION,
+        mode: "local",
+        auth: "none",
+        features: ["memory", "tasks", "graph", "worklog", "rules"],
+      };
 
     case "GET /projects": {
       const projects = await store.listProjects();

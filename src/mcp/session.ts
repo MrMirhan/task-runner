@@ -5,6 +5,7 @@ export interface Session {
   project_path?: string | null;
   branch?: string | null;
   pr?: string | null;
+  org?: string | null;
 }
 
 /** Holds the project scope of one MCP connection: explicit set_context wins over auto-detection. */

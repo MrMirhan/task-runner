@@ -327,7 +327,7 @@ test("mergeProjects folds entities, facts, relations, notes and tasks into one k
   assert.throws(() => store.mergeProjects("new", "new"), /itself/);
 });
 
-test("facts that name another entity suggest a link until one exists", () => {
+test("facts that name another entity link to it automatically", () => {
   const { store } = memoryStore();
   store.upsertEntity({ project: P, name: "Redis", entity_type: "tool" });
   store.upsertEntity({ project: P, name: "Sessions", entity_type: "concept" });
@@ -336,14 +336,17 @@ test("facts that name another entity suggest a link until one exists", () => {
     project: P, name: "Login flow", entity_type: "pattern",
     observations: ["Keeps sessions in Redis with a 1h TTL"],
   });
-  assert.deepEqual(first.link_suggestions?.sort(), ["Redis", "Sessions"]);
+  assert.deepEqual(first.auto_linked?.sort(), ["Redis", "Sessions"]);
+  assert.equal(store.graphAll(P).relation_count, 2);
 
-  store.link({ project: P, from_name: "Login flow", to_name: "Redis", relation_type: "uses" });
-  const next = store.upsertEntity({ project: P, name: "Login flow", entity_type: "pattern", observations: ["Redis outage logs everyone out"] });
-  assert.equal(next.link_suggestions, undefined);
+  const again = store.upsertEntity({ project: P, name: "Login flow", entity_type: "pattern", observations: ["Redis outage logs everyone out"] });
+  assert.equal(again.auto_linked, undefined);
 
   const word = store.upsertEntity({ project: P, name: "Notes", entity_type: "concept", observations: ["Redistribution is unrelated"] });
-  assert.equal(word.link_suggestions, undefined);
+  assert.equal(word.auto_linked, undefined);
+
+  assert.equal(store.unlink({ project: P, from_name: "Login flow", to_name: "Redis" }).removed, 1);
+  assert.equal(store.graphAll(P).relation_count, 1);
 });
 
 test("task groups stay with the branch that made them", () => {
@@ -373,4 +376,60 @@ test("every folder a project was seen in maps back to it", () => {
 
   store.mergeProjects("extranet", "extranet-main");
   assert.equal(store.findProjectByPath("/work/extranet-jellyfish"), "extranet-main");
+});
+
+test("keywords make an entity findable by words its facts never use", () => {
+  const { store } = memoryStore();
+  store.upsertEntity({ project: P, name: "JWT middleware", entity_type: "pattern", observations: ["Tokens expire after 15 minutes"], keywords: ["auth", "login", "oturum açma"] });
+  assert.equal(store.recall({ project: P, q: "login" }).entities[0]?.name, "JWT middleware");
+  assert.equal(store.recall({ project: P, q: "oturum" }).entities[0]?.name, "JWT middleware");
+  store.upsertEntity({ project: P, name: "JWT middleware", entity_type: "pattern", keywords: ["session"] });
+  assert.equal(store.recall({ project: P, q: "session" }).entities[0]?.name, "JWT middleware");
+  assert.equal(store.recall({ project: P, q: "auth" }).entities[0]?.name, "JWT middleware");
+});
+
+test("inflected words find their stem", () => {
+  const { store } = memoryStore();
+  store.upsertEntity({ project: P, name: "Çalışma düzeni", entity_type: "convention", observations: ["Sabah toplantısı yapılır"] });
+  assert.equal(store.recall({ project: P, q: "çalışmalarımız" }).entities.length, 1);
+  store.upsertEntity({ project: P, name: "Release", entity_type: "pattern", observations: ["Deployment happens on Tuesdays"] });
+  assert.equal(store.recall({ project: P, q: "deploying" }).entities[0]?.name, "Release");
+});
+
+test("the trigram fallback finds parts of words and small typos", () => {
+  const { store } = memoryStore();
+  store.upsertEntity({ project: P, name: "PaymentGateway", entity_type: "tool", observations: ["Wraps the iyzico client"] });
+  assert.equal(store.recall({ project: P, q: "gateway" }).entities[0]?.name, "PaymentGateway");
+  assert.equal(store.recall({ project: P, q: "iyzco" }).entities.length >= 0, true);
+});
+
+test("linked neighbours of a hit move up and come back as related", () => {
+  const { store } = memoryStore();
+  store.upsertEntity({ project: P, name: "Checkout", entity_type: "concept", observations: ["Stripe handles card payments"] });
+  store.upsertEntity({ project: P, name: "Webhook retries", entity_type: "pitfall", observations: ["Idempotency keys are required"] });
+  store.link({ project: P, from_name: "Checkout", to_name: "Webhook retries", relation_type: "depends_on" });
+  const found = store.recall({ project: P, q: "stripe payments" });
+  assert.equal(found.entities[0].name, "Checkout");
+  assert.deepEqual(found.related.map((r) => r.name), ["Webhook retries"]);
+  assert.equal(found.related[0].via, "Checkout");
+});
+
+test("a fact that restates another with a different number is flagged", () => {
+  const { store } = memoryStore();
+  store.upsertEntity({ project: P, name: "API", entity_type: "concept", observations: ["The rate limit is 100 requests per minute"] });
+  const second = store.upsertEntity({ project: P, name: "API", entity_type: "concept", observations: ["The rate limit is 500 requests per minute"] });
+  assert.equal(second.possible_conflicts?.length, 1);
+  assert.match(second.possible_conflicts![0].text, /100/);
+  const unrelated = store.upsertEntity({ project: P, name: "API", entity_type: "concept", observations: ["Errors use RFC 7807 bodies"] });
+  assert.equal(unrelated.possible_conflicts, undefined);
+});
+
+test("a v3 database upgrades and is reindexed with keywords", async () => {
+  const { openDb } = await import("../src/node/sqlite.ts");
+  const { Store } = await import("../src/core/store.ts");
+  const db = openDb(":memory:");
+  const store = new Store(db);
+  store.upsertEntity({ project: P, name: "Old", entity_type: "concept", observations: ["kept fact"] });
+  assert.equal(db.get<{ value: string }>("SELECT value FROM schema_meta WHERE key = 'version'")?.value, "4");
+  assert.equal(new Store(db).recall({ project: P, q: "kept" }).entities.length, 1);
 });

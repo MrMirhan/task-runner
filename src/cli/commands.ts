@@ -5,6 +5,7 @@ import { renderVault } from "../core/markdown.ts";
 import { Store, type ExportData } from "../core/store.ts";
 import { detectProject } from "../node/project.ts";
 import { defaultDbPath, openDb, type NodeDb } from "../node/sqlite.ts";
+import { deviceInfo, openRulesClient, resolveForHook } from "../node/remote.ts";
 import { formatDigest } from "./digest.ts";
 
 export interface Opened {
@@ -54,7 +55,7 @@ export function projectFor(store: Store, cwd: string) {
 
 // ─── hook session-start ──────────────────────────────────
 
-export function hookSessionStart(): void {
+export async function hookSessionStart(): Promise<void> {
   const input = stdinJson();
   const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
   let output: Record<string, unknown>;
@@ -63,10 +64,26 @@ export function hookSessionStart(): void {
     const { store, db } = openStore();
     const detected = projectFor(store, cwd);
     const { context, status } = formatDigest(detected, store.digest(detected.project, { branch: detected.branch }));
+
+    // Rules never block a session: a slow or unreachable server falls back to the last good copy.
+    const device = deviceInfo();
+    const client = openRulesClient(db, { timeoutMs: 1500 });
+    if (client.mode === "local") await client.registerDevice(device);
+    const rules = await resolveForHook(client, { project: detected.project, org: detected.org, device: device.id });
     db.close();
+
+    const rulesNote = rules.text
+      ? rules.stale ? " · rules (cached)" : " · rules"
+      : rules.error ? " · rules unavailable" : "";
+    const pending = rules.pending ? ` · ${rules.pending} rule proposal(s) to review` : "";
+    const staleLine = rules.stale ? "\n(These rules come from the local cache: the server could not be reached.)" : "";
+
     output = {
-      hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context },
-      systemMessage: status,
+      hookSpecificOutput: {
+        hookEventName: "SessionStart",
+        additionalContext: [rules.text ? rules.text + staleLine : "", context].filter(Boolean).join("\n\n"),
+      },
+      systemMessage: status + rulesNote + pending,
     };
   } catch (error) {
     // A broken memory store must never block a session from starting.
