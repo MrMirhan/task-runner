@@ -91,3 +91,20 @@ export function detectProject(
 
   return { project, project_path: root, branch, org, is_repo: top !== null };
 }
+
+/** detectProject for a store that answers asynchronously (the server). */
+export async function resolveProject(
+  cwd: string,
+  lookupByPath: (path: string) => Promise<string | null> | string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<DetectedProject> {
+  // Collect the paths the sync detector would look up, then answer them in one go.
+  const asked: string[] = [];
+  detectProject(cwd, (p) => {
+    asked.push(p);
+    return null;
+  }, env);
+  const answers = new Map<string, string | null>();
+  for (const p of asked) answers.set(p, await lookupByPath(p));
+  return detectProject(cwd, (p) => answers.get(p) ?? null, env);
+}

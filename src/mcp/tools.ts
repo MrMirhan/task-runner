@@ -104,7 +104,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ project, project_path, project_name, branch, pr }) =>
       run(async () => {
-        const detected = session.detected();
+        const detected = await session.detected();
         let next: Session;
         if (project) {
           const sameAsDetected = detected?.project === project;
@@ -122,7 +122,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         }
 
         const stored = await store.setContext({ project: next.project, project_path: next.project_path, project_name });
-        session.set(next);
+        await session.set(next);
         return {
           project: next.project,
           branch: next.branch ?? undefined,
@@ -153,7 +153,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
           (p) => !needle || `${p.key} ${p.project_path ?? ""}`.toLowerCase().includes(needle),
         );
         return {
-          current: session.get().project,
+          current: (await session.get()).project,
           total: all.length,
           projects: all.slice(0, limit ?? 20).map((p) => ({
             key: p.key, path: p.project_path ?? undefined, updated: day(p.updated_at),
@@ -178,7 +178,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ limit, type, full }) =>
       run(async () => {
-        const s = session.get();
+        const s = (await session.get());
         const { entries } = await store.getContext({ project: s.project, branch: s.branch, pr: s.pr, limit, type });
         return {
           project: s.project,
@@ -211,7 +211,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ content, title, type, tags, scope }) =>
       run(async () => {
-        const s = session.get();
+        const s = (await session.get());
         const wanted = (type ?? "note").trim().toLowerCase();
         const known = (ENTRY_TYPES as readonly string[]).includes(wanted);
         const effective = scope ?? "project";
@@ -256,7 +256,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ name, entity_type, observations, keywords, summary, importance, scope }) =>
       run(async () => {
-        const project = scope === "global" ? GLOBAL_PROJECT : session.get().project;
+        const project = scope === "global" ? GLOBAL_PROJECT : (await session.get()).project;
         return store.upsertEntity({
           project, name, entity_type: entity_type ?? "concept", summary, importance, observations, keywords,
         });
@@ -275,7 +275,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       annotations: DESTRUCTIVE,
     },
     ({ fact_id, new_fact }) =>
-      run(() => store.correctFact({ project: session.get().project, observation_id: fact_id, new_fact })),
+      run(async () => store.correctFact({ project: (await session.get()).project, observation_id: fact_id, new_fact })),
   );
 
   server.registerTool(
@@ -297,11 +297,11 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     ({ from, to, relation, from_type, to_type, context, remove }) =>
       run(async () => {
         if (remove) {
-          return store.unlink({ project: session.get().project, from_name: from, from_type, to_name: to, to_type, relation_type: relation });
+          return store.unlink({ project: (await session.get()).project, from_name: from, from_type, to_name: to, to_type, relation_type: relation });
         }
         try {
           return await store.link({
-            project: session.get().project,
+            project: (await session.get()).project,
             from_name: from, from_type, to_name: to, to_type,
             relation_type: relation ?? "relates_to", context,
           });
@@ -330,7 +330,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ query, entity_type, limit, all_projects }) =>
       run(async () => {
-        const s = session.get();
+        const s = (await session.get());
         const found = await store.recall({ project: s.project, q: query, entity_type, limit, all_projects });
         return {
           entities: found.entities.map((e) => shapeEntity(e, s)),
@@ -353,7 +353,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ name, entity_type }) =>
       run(async () => {
-        const s = session.get();
+        const s = (await session.get());
         const d = await store.describe({ project: s.project, name, entity_type });
         const rel = (r: Row, other: "target" | "source") => ({
           relation: r.relation_type, [other]: `${r[`${other}_name`]} (${r[`${other}_type`]})`, why: r.context ?? undefined,
@@ -379,7 +379,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: { name: z.string(), entity_type: entityType.optional() },
       annotations: DESTRUCTIVE,
     },
-    ({ name, entity_type }) => run(() => store.forget({ project: session.get().project, name, entity_type })),
+    ({ name, entity_type }) => run(async () => store.forget({ project: (await session.get()).project, name, entity_type })),
   );
 
   server.registerTool(
@@ -396,7 +396,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ check, max_age_days }) =>
       run(async () => {
-        const s = session.get();
+        const s = (await session.get());
         const stats = await store.graphStats(s.project);
         if (!check) return { project: s.project, ...stats };
 
@@ -474,12 +474,12 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         annotations: READ,
       },
       ({ range, from, to, project, detail }) =>
-        run(() =>
+        run(async () =>
           worklog({
             range: range ?? "week",
             from,
             to,
-            project: project === "current" ? session.get().project : (project ?? null),
+            project: project === "current" ? (await session.get()).project : (project ?? null),
             detail,
           }),
         ),
@@ -510,8 +510,8 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
           throw new StoreError("invalid", "Provide markdown with '## Task N: Title' sections, or a non-empty tasks array");
         }
         return store.createTasks({
-          project: session.get().project, task_group: slugify(name), tasks: list, system_prompt, replace,
-          branch: session.get().branch ?? null,
+          project: (await session.get()).project, task_group: slugify(name), tasks: list, system_prompt, replace,
+          branch: (await session.get()).branch ?? null,
         });
       }),
   );
@@ -524,8 +524,8 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: { task_group: z.string().optional().describe("Defaults to the latest group") },
       annotations: { ...WRITE, idempotentHint: false },
     },
-    ({ task_group }) => run(() => {
-        const s = session.get();
+    ({ task_group }) => run(async () => {
+        const s = (await session.get());
         return store.nextTask({ project: s.project, task_group, branch: s.branch ?? null });
       }),
   );
@@ -544,8 +544,8 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       annotations: WRITE,
     },
     ({ task_id, result, status, task_group }) =>
-      run(() => {
-        const project = session.get().project;
+      run(async () => {
+        const project = (await session.get()).project;
         return status === "failed"
           ? store.failTask({ project, task_id, error: result, task_group })
           : store.completeTask({ project, task_id, result, task_group });
@@ -565,7 +565,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ task_group, task_id }) =>
       run(async () => {
-        const s = session.get();
+        const s = (await session.get());
         const project = s.project;
         if (task_id) return store.taskResult({ project, task_id, task_group });
         const status = (await store.taskStatus({ project, task_group, branch: s.branch ?? null })) as {
@@ -584,6 +584,6 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: { task_group: z.string().optional().describe("Omit to clear every group") },
       annotations: DESTRUCTIVE,
     },
-    ({ task_group }) => run(() => store.clearTasks({ project: session.get().project, task_group })),
+    ({ task_group }) => run(async () => store.clearTasks({ project: (await session.get()).project, task_group })),
   );
 }

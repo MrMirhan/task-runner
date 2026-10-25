@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { RULE_SCOPES, type RuleKey, type RuleScope } from "../core/rules.ts";
-import { detectProject } from "../node/project.ts";
+import { openBackend } from "../node/backend.ts";
+import { resolveProject } from "../node/project.ts";
 import {
-  clearRemote, deviceInfo, loadRemote, openRulesClient, RemoteRulesClient, saveRemote, setDeviceLabel,
+  clearRemote, deviceInfo, loadRemote, RemoteRulesClient, saveRemote, setDeviceLabel,
   type RulesClient,
 } from "../node/remote.ts";
-import { flag, openStore } from "./commands.ts";
+import { flag } from "./commands.ts";
 
 const has = (args: string[], name: string) => args.includes(name);
 const valueFlags = new Set(["--scope", "--ref", "--device-id", "--file", "--key", "--label", "--cwd", "--url"]);
@@ -19,14 +20,13 @@ function words(args: string[]): string[] {
   return args.filter((a, i) => !a.startsWith("--") && !(i > 0 && valueFlags.has(args[i - 1])));
 }
 
-function context(args: string[]) {
-  const { store, db } = openStore();
-  const detected = detectProject(resolve(flag(args, "--cwd") ?? process.cwd()), (p) => store.findProjectByPath(p));
-  const device = deviceInfo();
-  return { db, detected, device, client: openRulesClient(db) };
+async function context(args: string[]) {
+  const backend = openBackend();
+  const detected = await resolveProject(resolve(flag(args, "--cwd") ?? process.cwd()), (p) => backend.store.findProjectByPath(p));
+  return { backend, detected, device: deviceInfo(), client: backend.rules };
 }
 
-function scopeOf(args: string[], c: ReturnType<typeof context>): RuleKey {
+function scopeOf(args: string[], c: Awaited<ReturnType<typeof context>>): RuleKey {
   const explicit = flag(args, "--scope");
   const project = has(args, "--project");
   const org = has(args, "--org");
@@ -86,7 +86,7 @@ export function logoutCommand(): void {
 export async function rulesCommand(args: string[]): Promise<void> {
   const sub = words(args)[0] && !args[0]?.startsWith("--") ? args[0] : "show";
   const rest = args[0] === sub ? args.slice(1) : args;
-  const c = context(args);
+  const c = await context(args);
   try {
     const devices = await c.client.listDevices().catch(() => []);
     const labels = new Map(devices.map((d) => [d.id, d.label]));
@@ -189,7 +189,7 @@ export async function rulesCommand(args: string[]): Promise<void> {
         throw new Error("Usage: task-runner-mcp rules [show | list | set | edit | pending | approve <id> | reject <id> | devices | rename-device <label>]");
     }
   } finally {
-    c.db.close();
+    c.backend.close();
   }
 }
 

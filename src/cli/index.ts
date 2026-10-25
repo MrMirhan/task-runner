@@ -71,7 +71,7 @@ async function main(): Promise<void> {
       return;
     }
     case "snapshot":
-      return (await import("./commands.ts")).snapshot(args);
+      return await (await import("./commands.ts")).snapshot(args);
     case "dashboard": {
       const { dashboard } = await import("./dashboard.ts");
       await dashboard(args);
@@ -102,17 +102,17 @@ async function main(): Promise<void> {
       return;
     }
     case "forget":
-      return (await import("./commands.ts")).forgetCommand(args);
+      return await (await import("./commands.ts")).forgetCommand(args);
     case "note":
-      return (await import("./commands.ts")).noteCommand(args);
+      return await (await import("./commands.ts")).noteCommand(args);
     case "export":
-      return (await import("./commands.ts")).exportCommand(args);
+      return await (await import("./commands.ts")).exportCommand(args);
     case "import":
-      return (await import("./commands.ts")).importCommand(args);
+      return await (await import("./commands.ts")).importCommand(args);
     case "projects":
-      return (await import("./commands.ts")).projectsCommand(args);
+      return await (await import("./commands.ts")).projectsCommand(args);
     case "doctor":
-      return (await import("./commands.ts")).doctor();
+      return await (await import("./commands.ts")).doctor();
     case "version":
     case "--version":
     case "-v":

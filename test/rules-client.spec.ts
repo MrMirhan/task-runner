@@ -7,39 +7,41 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
-import { handleRulesApi } from "../src/core/rules-api.ts";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Store } from "../src/core/store.ts";
+import { handleApp } from "../src/http/app.ts";
 import { RulesStore } from "../src/core/rules.ts";
 import { RemoteRulesClient, readRulesCache, resolveForHook } from "../src/node/remote.ts";
 import { openDb } from "../src/node/sqlite.ts";
 
 const entry = new URL("../src/cli/index.ts", import.meta.url).pathname;
 
-/** A stand-in for the Worker: the same handler, bearer auth in front. */
-async function startServer(key = "secret-key") {
-  const rules = new RulesStore(openDb(":memory:"));
+/** The Worker's handler on a Node HTTP server: same routes, same auth, an in-memory database. */
+async function startServer(key = "test-key-0123456789abcdefghij") {
+  const db = openDb(":memory:");
+  const rules = new RulesStore(db);
+  const store = new Store(db);
   const server: Server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", "http://x");
-    if (req.headers.authorization !== `Bearer ${key}`) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ error: "Unauthorized" }));
-    }
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => {
-      const raw = Buffer.concat(chunks).toString();
-      const out = handleRulesApi(rules, {
-        method: req.method ?? "GET",
-        path: url.pathname.replace(/^\/api/, ""),
-        query: url.searchParams,
-        body: raw ? JSON.parse(raw) : undefined,
+    req.on("end", async () => {
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(req.headers)) if (typeof value === "string") headers.set(name, value);
+      const method = req.method ?? "GET";
+      const request = new Request(`http://${req.headers.host}${req.url}`, {
+        method,
+        headers,
+        body: method === "GET" || method === "HEAD" ? undefined : Buffer.concat(chunks),
       });
-      res.writeHead(out.status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(out.body));
+      const out = await handleApp({ store, rules, key }, request);
+      res.writeHead(out.status, Object.fromEntries(out.headers));
+      res.end(Buffer.from(await out.arrayBuffer()));
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { url, rules, close: () => new Promise<void>((r) => server.close(() => r())), key };
+  return { url, rules, store, close: () => new Promise<void>((r) => server.close(() => r())), key };
 }
 
 const ctx = { project: "acme-shop", org: "acme", device: "dev-1" };
@@ -141,8 +143,48 @@ test("login, rules set and the session hook work together through the CLI", asyn
     assert.match(await run(["rules", "show"]), /Prefer small PRs\./);
     assert.match(await run(["rules", "devices"]), /test-box\t.*\(this device\)/);
 
+    // Signed in, memory goes to the server as well.
+    await run(["note", "The", "checkout", "uses", "Stripe"]);
+    assert.match(JSON.stringify(s.store.getContext({ project: "acme-shop", all: true })), /checkout uses Stripe/);
+
     assert.match(await run(["logout"]), /Signed out/);
     assert.match(await run(["rules", "show"]), /no rules yet/);
+  } finally {
+    await s.close();
+  }
+});
+
+test("the MCP endpoint serves the same tools over HTTP and keeps memory on the server", async () => {
+  const s = await startServer();
+  const connect = async (headers: Record<string, string>) => {
+    const client = new Client({ name: "test", version: "1" });
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${s.url}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${s.key}`, ...headers } } }));
+    return client;
+  };
+  const call = async (client: Client, name: string, args: Record<string, unknown>) => {
+    const out = (await client.callTool({ name, arguments: args })) as { content: Array<{ text: string }>; isError?: boolean };
+    return { error: out.isError, data: JSON.parse(out.content[0].text) };
+  };
+  try {
+    const a = await connect({ "X-Task-Runner-Project": "acme-shop", "X-Task-Runner-Org": "acme" });
+    const tools = (await a.listTools()).tools.map((t) => t.name);
+    assert.ok(tools.includes("recall") && tools.includes("rules") && tools.includes("worklog"));
+    assert.equal((await call(a, "remember", { name: "checkout", observations: ["Payments go through Stripe"] })).error, undefined);
+    await a.close();
+
+    // Another device without headers: no scope until set_context, which the server keeps.
+    const b = await connect({});
+    assert.equal((await call(b, "recall", { query: "stripe" })).error, true);
+    await call(b, "set_context", { project: "acme-shop" });
+    await b.close();
+    const c = await connect({});
+    const found = await call(c, "recall", { query: "stripe payments" });
+    assert.match(JSON.stringify(found.data), /Payments go through Stripe/);
+    assert.equal(s.store.graphStats("acme-shop").entities, 1);
+    await c.close();
+
+    const unauthorized = await fetch(`${s.url}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    assert.equal(unauthorized.status, 401);
   } finally {
     await s.close();
   }

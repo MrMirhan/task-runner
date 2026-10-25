@@ -1,7 +1,7 @@
 import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import type { Store } from "../core/store.ts";
+import type { StoreApi } from "../core/api.ts";
 import { detectProject } from "../node/project.ts";
 import { computeWorklog, DEFAULT_OPTIONS, type RawEvent, type Resolvers, type WorklogOptions } from "./compute.ts";
 
@@ -185,22 +185,25 @@ function existingAncestor(path: string): string | null {
 }
 
 /** Maps folders and files to project keys, also for folders that were deleted since (worktrees, scratch dirs). */
-export function makeResolvers(store: Store): Resolvers {
+export function makeResolvers(known: Array<{ path: string; project_key: string }>): Resolvers {
+  const byPath = new Map(known.map((k) => [k.path, k.project_key]));
+  const findByPath = (path: string) => byPath.get(path) ?? null;
+  const findByPrefix = (prefix: string) => known.find((k) => k.path.startsWith(prefix))?.project_key ?? null;
   const byCwd = new Map<string, { project: string; isRepo: boolean }>();
   const byDir = new Map<string, string | null>();
   // Repo roots seen so far: any file below one needs no git call.
   const roots: Array<{ root: string; project: string }> = [];
 
   // An empty environment: TASK_RUNNER_PROJECT must not relabel every folder in the history.
-  const detect = (dir: string) => detectProject(dir, (p) => store.findProjectByPath(p), {});
+  const detect = (dir: string) => detectProject(dir, findByPath, {});
 
   const fromMissing = (cwd: string): { project: string; isRepo: boolean } => {
-    const known = store.findProjectByPath(cwd);
-    if (known) return { project: known, isRepo: true };
+    const seen = findByPath(cwd);
+    if (seen) return { project: seen, isRepo: true };
     const orca = /\/orca\/workspaces\/([^/]+)\/[^/]+/.exec(cwd);
     if (orca) {
       const prefix = `${cwd.slice(0, (orca.index ?? 0) + orca[0].lastIndexOf("/"))}/`;
-      return { project: store.findProjectByPathPrefix(prefix) ?? orca[1], isRepo: true };
+      return { project: findByPrefix(prefix) ?? orca[1], isRepo: true };
     }
     if (SCRATCH.test(cwd)) return { project: "(scratch)", isRepo: false };
     const ancestor = existingAncestor(cwd);
@@ -258,30 +261,42 @@ export interface ScanResult {
 }
 
 export async function scanWorklog(
-  store: Store,
-  input: { sinceDays?: number | null; options?: WorklogOptions; root?: string; onFile?: (path: string) => void } = {},
+  store: StoreApi,
+  input: {
+    sinceDays?: number | null;
+    options?: WorklogOptions;
+    root?: string;
+    onFile?: (path: string) => void;
+    /** Transcripts are per machine: the device id keeps two machines' files apart on a shared server. */
+    deviceId?: string;
+  } = {},
 ): Promise<ScanResult> {
   const options = input.options ?? DEFAULT_OPTIONS;
   const signature = `${options.humanCapSeconds}:${options.aiCapSeconds}:1`;
-  if (store.worklogSetting(SETTING_KEY) !== signature) {
-    store.clearWorklog();
-    store.setWorklogSetting(SETTING_KEY, signature);
+  const settingKey = input.deviceId ? `${SETTING_KEY}:${input.deviceId}` : SETTING_KEY;
+  if ((await store.worklogSetting(settingKey)) !== signature) {
+    if (!input.deviceId) await store.clearWorklog();
+    await store.setWorklogSetting(settingKey, signature);
   }
 
-  const resolvers = makeResolvers(store);
+  const resolvers = makeResolvers(await store.projectPaths());
   const result: ScanResult = { scanned: 0, skipped: 0 };
   const sinceDays = input.sinceDays === undefined ? 120 : input.sinceDays;
+  const files = listTranscripts(input.root ?? transcriptRoot(), sinceDays);
+  const keyOf = (path: string) => (input.deviceId ? `${input.deviceId}:${path}` : path);
+  const known = await store.worklogFileStates(files.map((f) => keyOf(f.path)));
 
-  for (const file of listTranscripts(input.root ?? transcriptRoot(), sinceDays)) {
-    const known = store.worklogFileState(file.path);
-    if (known && known.size === file.size && known.mtime === file.mtime) {
+  for (const file of files) {
+    const key = keyOf(file.path);
+    const state = known[key];
+    if (state && state.size === file.size && state.mtime === file.mtime) {
       result.skipped++;
       continue;
     }
     input.onFile?.(file.path);
     const events = await readEvents(file.path);
     const { minutes, facts } = computeWorklog(events, resolvers, options);
-    store.replaceWorklogFile(file.path, file.size, file.mtime, minutes, facts);
+    await store.replaceWorklogFile(key, file.size, file.mtime, minutes, facts);
     result.scanned++;
   }
   return result;

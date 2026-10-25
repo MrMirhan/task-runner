@@ -5,11 +5,12 @@ import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { StoreApi } from "../core/api.ts";
 import { RulesStore } from "../core/rules.ts";
-import type { Store } from "../core/store.ts";
-import { flag, openStore } from "./commands.ts";
+import { openBackend } from "../node/backend.ts";
+import { deviceInfo } from "../node/remote.ts";
+import { flag } from "./commands.ts";
 import { buildReport, renderCsv, resolveRange } from "../worklog/report.ts";
 import { scanWorklog } from "../worklog/scan.ts";
-import { handleApi } from "./rest.ts";
+import { handleApi } from "../core/rest.ts";
 import { worklogOptions } from "./worklog.ts";
 
 const TYPES: Record<string, string> = {
@@ -61,7 +62,7 @@ const sendJson = (res: ServerResponse, status: number, body: unknown) =>
  * GET /api/worklog?range=today|yesterday|week|last-week|month|custom&from&to&project&detail=true
  * GET /api/worklog.csv with the same query. Reads the session transcripts first (incremental).
  */
-async function worklogApi(store: Store, url: URL): Promise<{ status: number; body: string; type: string }> {
+async function worklogApi(store: StoreApi, url: URL): Promise<{ status: number; body: string; type: string }> {
   const q = url.searchParams;
   const range = q.get("range") ?? "week";
   try {
@@ -75,13 +76,13 @@ async function worklogApi(store: Store, url: URL): Promise<{ status: number; bod
       to: range === "custom" ? (q.get("to") ?? undefined) : undefined,
     });
     const daysBack = Math.ceil((Date.now() / 1000 - resolved.from) / 86400) + 1;
-    await scanWorklog(store, { sinceDays: Math.max(daysBack, 2), options: worklogOptions([]) });
+    await scanWorklog(store, { sinceDays: Math.max(daysBack, 2), options: worklogOptions([]), deviceId: deviceInfo().id });
     const project = q.get("project") || null;
     const exclude = (process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
     if (url.pathname.endsWith(".csv")) {
-      return { status: 200, body: renderCsv(store, { range: resolved, project, exclude }), type: "text/csv; charset=utf-8" };
+      return { status: 200, body: await renderCsv(store, { range: resolved, project, exclude }), type: "text/csv; charset=utf-8" };
     }
-    const report = buildReport(store, { range: resolved, project, exclude, detail: q.get("detail") === "true" });
+    const report = await buildReport(store, { range: resolved, project, exclude, detail: q.get("detail") === "true" });
     return { status: 200, body: JSON.stringify({ success: true, ...report }), type: "application/json" };
   } catch (error) {
     return { status: 400, body: JSON.stringify({ error: error instanceof Error ? error.message : "Bad request" }), type: "application/json" };
@@ -96,7 +97,7 @@ export function findStaticDir(): string | null {
   return null;
 }
 
-export function createDashboardServer(store: Store, staticDir: string | null, rules?: RulesStore): Server {
+export function createDashboardServer(store: StoreApi, staticDir: string | null, rules?: RulesStore): Server {
   return createServer(async (req, res) => {
     try {
       const host = req.headers.host ?? "";
@@ -161,8 +162,14 @@ export function createDashboardServer(store: Store, staticDir: string | null, ru
 
 export async function dashboard(args: string[]): Promise<void> {
   const port = Number(flag(args, "--port") ?? process.env.PORT ?? 4747);
-  const { store, db } = openStore();
-  const server = createDashboardServer(store, findStaticDir(), new RulesStore(db));
+  const backend = openBackend();
+  if (!backend.local) {
+    backend.close();
+    console.error(`Memory lives on ${backend.location}. Open that address in a browser for the dashboard.`);
+    return;
+  }
+  const { db } = backend;
+  const server = createDashboardServer(backend.local, findStaticDir(), new RulesStore(db));
 
   server.on("error", (error: NodeJS.ErrnoException) => {
     console.error(error.code === "EADDRINUSE" ? `Port ${port} is in use. Try --port <other>.` : error.message);

@@ -2,23 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { GLOBAL_PROJECT, SERVER_VERSION } from "../core/constants.ts";
 import { renderVault } from "../core/markdown.ts";
-import { Store, type ExportData } from "../core/store.ts";
-import { detectProject } from "../node/project.ts";
-import { defaultDbPath, openDb, type NodeDb } from "../node/sqlite.ts";
-import { deviceInfo, openRulesClient, resolveForHook } from "../node/remote.ts";
+import type { StoreApi } from "../core/api.ts";
+import type { ExportData } from "../core/store.ts";
+import { openBackend } from "../node/backend.ts";
+import { resolveProject } from "../node/project.ts";
+import { defaultDbPath } from "../node/sqlite.ts";
+import { deviceInfo, resolveForHook } from "../node/remote.ts";
 import { formatDigest } from "./digest.ts";
-
-export interface Opened {
-  db: NodeDb;
-  store: Store;
-  path: string;
-}
-
-export function openStore(): Opened {
-  const path = defaultDbPath();
-  const db = openDb(path);
-  return { db, store: new Store(db), path };
-}
 
 export function flag(args: string[], name: string): string | undefined {
   const i = args.indexOf(name);
@@ -46,10 +36,10 @@ function stdinJson(): Record<string, unknown> {
   }
 }
 
-/** Resolves the project for a directory using the opened store, registering it on first sight. */
-export function projectFor(store: Store, cwd: string) {
-  const detected = detectProject(cwd, (p) => store.findProjectByPath(p));
-  store.setContext({ project: detected.project, project_path: detected.project_path });
+/** Resolves the project for a directory, registering it (and the folder) on first sight. */
+export async function projectFor(store: StoreApi, cwd: string) {
+  const detected = await resolveProject(cwd, (p) => store.findProjectByPath(p));
+  await store.setContext({ project: detected.project, project_path: detected.project_path });
   return detected;
 }
 
@@ -61,16 +51,16 @@ export async function hookSessionStart(): Promise<void> {
   let output: Record<string, unknown>;
 
   try {
-    const { store, db } = openStore();
-    const detected = projectFor(store, cwd);
-    const { context, status } = formatDigest(detected, store.digest(detected.project, { branch: detected.branch }));
+    // A slow server never blocks a session: memory gets a few seconds, rules fall back to the last good copy.
+    const backend = openBackend({ timeoutMs: 4000 });
+    const { store } = backend;
+    const detected = await projectFor(store, cwd);
+    const { context, status } = formatDigest(detected, await store.digest(detected.project, { branch: detected.branch }));
 
-    // Rules never block a session: a slow or unreachable server falls back to the last good copy.
     const device = deviceInfo();
-    const client = openRulesClient(db, { timeoutMs: 1500 });
-    if (client.mode === "local") await client.registerDevice(device);
-    const rules = await resolveForHook(client, { project: detected.project, org: detected.org, device: device.id });
-    db.close();
+    if (backend.mode === "local") await backend.rules.registerDevice(device);
+    const rules = await resolveForHook(backend.rules, { project: detected.project, org: detected.org, device: device.id });
+    backend.close();
 
     const rulesNote = rules.text
       ? rules.stale ? " · rules (cached)" : " · rules"
@@ -94,81 +84,66 @@ export async function hookSessionStart(): Promise<void> {
 
 // ─── snapshot (feeds the live panel) ─────────────────────
 
-export function snapshot(args: string[]): void {
+export async function snapshot(args: string[]): Promise<void> {
   const cwd = resolve(flag(args, "--cwd") ?? process.cwd());
-  const query = flag(args, "--query");
-  const entity = flag(args, "--entity");
-  const { store, db } = openStore();
-  const detected = projectFor(store, cwd);
-  const project = detected.project;
-
-  if (entity) {
-    const out = store.describe({ project, name: entity, entity_type: flag(args, "--type") });
-    db.close();
+  const backend = openBackend();
+  try {
+    const { store } = backend;
+    const detected = await projectFor(store, cwd);
+    const entity = flag(args, "--entity");
+    const out = entity
+      ? await store.describe({ project: detected.project, name: entity, entity_type: flag(args, "--type") })
+      : { ...(await store.snapshot({ project: detected.project, branch: detected.branch, query: flag(args, "--query") })), location: backend.location };
     process.stdout.write(`${JSON.stringify(out)}\n`);
-    return;
+  } finally {
+    backend.close();
   }
-
-  const group = store.latestGroup(project, detected.branch);
-  const tasks = group
-    ? { summary: store.taskSummary(project, group), items: (store.taskStatus({ project, task_group: group }) as { tasks: unknown[] }).tasks }
-    : null;
-
-  const graph = store.graphAll(project);
-  const out = {
-    project,
-    branch: detected.branch,
-    stats: store.graphStats(project),
-    tasks,
-    notes: store.getContext({ project, all: true, limit: 8 }).entries,
-    entities: graph.entities.slice(0, 40),
-    relations: graph.relations.length,
-    search: query ? store.recall({ project, q: query, limit: 8 }) : undefined,
-  };
-  db.close();
-  process.stdout.write(`${JSON.stringify(out)}\n`);
 }
 
 // ─── forget / note (used by the panel and the slash commands) ──
 
-export function forgetCommand(args: string[]): void {
+export async function forgetCommand(args: string[]): Promise<void> {
   const name = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--")));
   if (!name) fail("Usage: task-runner-mcp forget <name> [--type t] [--cwd dir]");
-  const { store, db } = openStore();
-  const detected = projectFor(store, resolve(flag(args, "--cwd") ?? process.cwd()));
-  const result = store.forget({ project: detected.project, name: name!, entity_type: flag(args, "--type") });
-  db.close();
-  console.log(JSON.stringify(result));
+  const backend = openBackend();
+  try {
+    const detected = await projectFor(backend.store, resolve(flag(args, "--cwd") ?? process.cwd()));
+    console.log(JSON.stringify(await backend.store.forget({ project: detected.project, name: name!, entity_type: flag(args, "--type") })));
+  } finally {
+    backend.close();
+  }
 }
 
-export function noteCommand(args: string[]): void {
+export async function noteCommand(args: string[]): Promise<void> {
   const text = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--"))).join(" ").trim();
-  if (!text) fail("Usage: task-runner-mcp note <text> [--cwd dir]");
-  const { store, db } = openStore();
-  const detected = projectFor(store, resolve(flag(args, "--cwd") ?? process.cwd()));
-  const title = text.length > 80 ? `${text.slice(0, 77)}...` : text;
-  const type = flag(args, "--type") ?? "note";
-  const saved = store.saveEntry({
-    project: detected.project,
-    type,
-    title,
-    content: text,
-    scope: detected.branch ? "branch" : "project",
-    scope_ref: detected.branch,
-  });
-  db.close();
-  console.log(JSON.stringify(saved));
+  if (!text) fail("Usage: task-runner-mcp note <text> [--type t] [--cwd dir]");
+  const backend = openBackend();
+  try {
+    const detected = await projectFor(backend.store, resolve(flag(args, "--cwd") ?? process.cwd()));
+    const title = text.length > 80 ? `${text.slice(0, 77)}...` : text;
+    const saved = await backend.store.saveEntry({
+      project: detected.project,
+      type: flag(args, "--type") ?? "note",
+      title,
+      content: text,
+      scope: detected.branch ? "branch" : "project",
+      scope_ref: detected.branch,
+    });
+    console.log(JSON.stringify(saved));
+  } finally {
+    backend.close();
+  }
 }
 
 // ─── export / import ─────────────────────────────────────
 
-export function exportCommand(args: string[]): void {
-  const { store, db } = openStore();
+export async function exportCommand(args: string[]): Promise<void> {
+  const backend = openBackend({ timeoutMs: 120000 });
   const project = flag(args, "--project") ?? null;
   const format = flag(args, "--format") ?? "json";
   const out = flag(args, "--out");
-  const data = store.exportAll(project);
-  db.close();
+  const data = await backend.store.exportAll(project);
+  backend.close();
 
   if (format === "markdown") {
     if (!out) fail("--out <directory> is required for --format markdown");
@@ -193,7 +168,7 @@ export function exportCommand(args: string[]): void {
   }
 }
 
-export function importCommand(args: string[]): void {
+export async function importCommand(args: string[]): Promise<void> {
   const file = args[0];
   if (!file) fail("Usage: task-runner-mcp import <file.json>");
   let data: ExportData;
@@ -202,22 +177,26 @@ export function importCommand(args: string[]): void {
   } catch (error) {
     return fail(`Cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const { store, db } = openStore();
-  const result = store.importAll(data);
-  db.close();
-  console.error(`Imported: ${JSON.stringify(result.imported)}`);
+  const backend = openBackend({ timeoutMs: 300000 });
+  try {
+    const result = await backend.store.importAll(data);
+    console.error(`Imported into ${backend.location}: ${JSON.stringify(result.imported)}`);
+  } finally {
+    backend.close();
+  }
 }
 
 // ─── projects ────────────────────────────────────────────
 
-export function projectsCommand(args: string[]): void {
+export async function projectsCommand(args: string[]): Promise<void> {
   const [action, key] = args;
-  const { store, db } = openStore();
+  const backend = openBackend();
+  const { store } = backend;
   try {
     if (!action || action === "list") {
-      const rows = store.listProjects();
+      const rows = await store.listProjects();
       for (const p of rows) {
-        const stats = store.graphStats(String(p.key));
+        const stats = await store.graphStats(String(p.key));
         console.log(`${p.key}\t${stats.entities} entities\t${stats.entries} notes\t${p.project_path ?? ""}`);
       }
       if (rows.length === 0) console.log("No projects yet.");
@@ -225,48 +204,53 @@ export function projectsCommand(args: string[]): void {
       const into = args[2];
       if (!key || !into) fail("Usage: task-runner-mcp projects merge <from> <into> --yes");
       if (!has(args, "--yes")) fail(`This folds '${key}' into '${into}' and removes '${key}'. Re-run with --yes to confirm.`);
-      console.log(JSON.stringify(store.mergeProjects(key!, into!)));
+      console.log(JSON.stringify(await store.mergeProjects(key!, into!)));
     } else if (action === "delete") {
       if (!key) fail("Usage: task-runner-mcp projects delete <key> --yes");
       if (!has(args, "--yes")) fail(`This permanently deletes all memory for '${key}'. Re-run with --yes to confirm.`);
-      store.deleteProject(key!);
+      await store.deleteProject(key!);
       console.error(`Deleted ${key}`);
     } else {
       fail("Usage: task-runner-mcp projects [list | merge <from> <into> --yes | delete <key> --yes]");
     }
   } finally {
-    db.close();
+    backend.close();
   }
 }
 
 // ─── doctor ──────────────────────────────────────────────
 
-export function doctor(): void {
+export async function doctor(): Promise<void> {
   const path = defaultDbPath();
   console.log(`task-runner-mcp ${SERVER_VERSION}`);
   console.log(`node         ${process.version}`);
-  console.log(`database     ${path} (${existsSync(path) ? "exists" : "will be created on first use"})`);
   try {
-    const { store, db } = openStore();
-    const version = db.get<{ v: string }>("SELECT sqlite_version() AS v")?.v;
-    const projects = store.listProjects().length;
-    const global = store.graphStats(GLOBAL_PROJECT).entities;
-    console.log(`sqlite       ${version} (FTS5 ok)`);
-    console.log(`projects     ${projects}`);
-    console.log(`global facts ${global}`);
-    const detected = detectProject(process.cwd(), (p) => store.findProjectByPath(p));
-    console.log(`this folder  ${detected.project}${detected.branch ? ` @ ${detected.branch}` : ""}`);
+    const backend = openBackend();
+    const { store } = backend;
+    if (backend.mode === "local") {
+      console.log(`database     ${path} (${existsSync(path) ? "exists" : "will be created on first use"})`);
+      const version = backend.db.get<{ v: string }>("SELECT sqlite_version() AS v")?.v;
+      console.log(`sqlite       ${version} (FTS5 ok)`);
+    } else {
+      console.log(`memory       ${backend.location}`);
+    }
+    const projects = await store.listProjects();
+    console.log(`projects     ${projects.length}`);
+    console.log(`global facts ${(await store.graphStats(GLOBAL_PROJECT)).entities}`);
+    const detected = await resolveProject(process.cwd(), (p) => store.findProjectByPath(p));
+    console.log(`this folder  ${detected.project}${detected.branch ? ` @ ${detected.branch}` : ""}${detected.org ? ` (org ${detected.org})` : ""}`);
+    console.log(`this device  ${deviceInfo().label} (${deviceInfo().id})`);
 
     const byPath = new Map<string, string[]>();
-    for (const p of store.listProjects()) {
+    for (const p of projects) {
       if (p.project_path) byPath.set(String(p.project_path), [...(byPath.get(String(p.project_path)) ?? []), String(p.key)]);
     }
-    for (const [path, keys] of byPath) {
+    for (const [dup, keys] of byPath) {
       if (keys.length > 1) {
-        console.log(`duplicate    ${path} is recorded as ${keys.join(", ")} (fix: task-runner-mcp projects merge <from> <into> --yes)`);
+        console.log(`duplicate    ${dup} is recorded as ${keys.join(", ")} (fix: task-runner-mcp projects merge <from> <into> --yes)`);
       }
     }
-    db.close();
+    backend.close();
   } catch (error) {
     console.log(`error        ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;

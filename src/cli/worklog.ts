@@ -1,8 +1,11 @@
 import { resolve } from "node:path";
+import type { StoreApi } from "../core/api.ts";
+import { openBackend } from "../node/backend.ts";
+import { deviceInfo } from "../node/remote.ts";
 import { DEFAULT_OPTIONS, taskInfo, type WorklogOptions } from "../worklog/compute.ts";
-import { buildReport, formatDuration, renderCsv, renderMarkdown, renderText, resolveRange } from "../worklog/report.ts";
+import { buildReport, formatDuration, renderCsv, renderMarkdown, renderText, resolveRange, summarizeReport, type Range } from "../worklog/report.ts";
 import { scanWorklog } from "../worklog/scan.ts";
-import { flag, openStore, projectFor } from "./commands.ts";
+import { flag, projectFor } from "./commands.ts";
 
 export function worklogOptions(args: string[]): WorklogOptions {
   const minutes = (name: string, fallback: number) => {
@@ -16,10 +19,43 @@ export function worklogOptions(args: string[]): WorklogOptions {
   };
 }
 
+const exclusions = (args: string[] = []) =>
+  (flag(args, "--exclude") ?? process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
+
+/** Only transcripts touched since the range began can add time to it. */
+const daysBackTo = (range: Range) => Math.max(Math.ceil((Date.now() / 1000 - range.from) / 86400) + 1, 2);
+
+export function rangeFromName(name: string, from?: string, to?: string): Range {
+  return resolveRange({
+    today: name === "today",
+    yesterday: name === "yesterday",
+    week: name === "week",
+    lastWeek: name === "last-week",
+    month: name === "month",
+    from: name === "custom" ? from : undefined,
+    to: name === "custom" ? to : undefined,
+  });
+}
+
+/** The `worklog` MCP tool: reads this machine's transcripts into the store, then reports from it. */
+export async function worklogTool(
+  store: StoreApi,
+  input: { range: string; from?: string; to?: string; project?: string | null; detail?: boolean },
+  deviceId: string,
+  options: { scanOnly?: boolean } = {},
+) {
+  const range = rangeFromName(input.range, input.from, input.to);
+  await scanWorklog(store, { sinceDays: daysBackTo(range), options: worklogOptions([]), deviceId });
+  if (options.scanOnly) return null;
+  return summarizeReport(await buildReport(store, { range, project: input.project, exclude: exclusions(), detail: input.detail, detailLimit: 10 }));
+}
+
 export async function worklogCommand(args: string[]): Promise<void> {
   const [first] = args;
   const sub = first && !first.startsWith("--") ? first : "report";
-  const { store, db } = openStore();
+  const backend = openBackend();
+  const { store } = backend;
+  const deviceId = deviceInfo().id;
   try {
     const options = worklogOptions(args);
     const explicitSince = flag(args, "--since-days");
@@ -27,19 +63,21 @@ export async function worklogCommand(args: string[]): Promise<void> {
       scanWorklog(store, {
         sinceDays,
         options,
+        deviceId,
         onFile: process.stderr.isTTY ? () => process.stderr.write(".") : undefined,
       });
 
     if (sub === "scan") {
       const result = await scan();
-      console.log(`Scanned ${result.scanned} transcripts, ${result.skipped} unchanged.`);
+      if (process.stderr.isTTY) process.stderr.write("\n");
+      console.log(`Scanned ${result.scanned} transcripts, ${result.skipped} unchanged (${backend.location}).`);
       return;
     }
 
     if (sub === "pending") {
       if (!args.includes("--no-scan")) await scan();
       const target = flag(args, "--target") ?? "default";
-      const rows = store.worklogPending(target);
+      const rows = await store.worklogPending(target);
       if (rows.length === 0) console.log("Nothing waiting for export.");
       for (const r of rows) {
         console.log(`${r.project_key}\t${taskInfo(r.branch).label}\t${r.branch}\tyou ${formatDuration(r.human_s)}\tagent ${formatDuration(r.ai_s)}\twall ${formatDuration(r.minutes * 60)}`);
@@ -50,7 +88,7 @@ export async function worklogCommand(args: string[]): Promise<void> {
     if (sub === "exported") {
       const [, project, branch] = args;
       if (!project || !branch) throw new Error("Usage: task-runner-mcp worklog exported <project> <branch> [--target name]");
-      console.log(JSON.stringify(store.worklogMarkExported(project, branch, flag(args, "--target") ?? "default")));
+      console.log(JSON.stringify(await store.worklogMarkExported(project, branch, flag(args, "--target") ?? "default")));
       return;
     }
 
@@ -67,29 +105,27 @@ export async function worklogCommand(args: string[]): Promise<void> {
       to: flag(args, "--to"),
     });
 
-    // Only transcripts touched since the range began can add time to it.
     if (!args.includes("--no-scan")) {
-      const daysBack = Math.ceil((Date.now() / 1000 - range.from) / 86400) + 1;
-      await scan(args.includes("--all") ? null : Number(explicitSince ?? Math.max(daysBack, 2)));
+      await scan(args.includes("--all") ? null : Number(explicitSince ?? daysBackTo(range)));
       if (process.stderr.isTTY) process.stderr.write("\n");
     }
 
     let project = flag(args, "--project") ?? null;
-    if (project === ".") project = projectFor(store, resolve(flag(args, "--cwd") ?? process.cwd())).project;
+    if (project === ".") project = (await projectFor(store, resolve(flag(args, "--cwd") ?? process.cwd()))).project;
 
-    const exclude = (flag(args, "--exclude") ?? process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
+    const exclude = exclusions(args);
     const format = flag(args, "--format") ?? "text";
     if (format === "csv") {
-      console.log(renderCsv(store, { range, project, exclude }));
+      console.log(await renderCsv(store, { range, project, exclude }));
       return;
     }
     const detail = args.includes("--detail") || format === "md" || format === "json";
-    const report = buildReport(store, { range, project, exclude, detail });
+    const report = await buildReport(store, { range, project, exclude, detail });
     if (format === "json") console.log(JSON.stringify(report));
     else if (format === "md") console.log(renderMarkdown(report));
     else if (format === "text") console.log(renderText(report, { detail }));
     else throw new Error(`Unknown format '${format}'. Use text, md, csv or json.`);
   } finally {
-    db.close();
+    backend.close();
   }
 }

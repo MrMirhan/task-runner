@@ -1,4 +1,4 @@
-import type { Store } from "../core/store.ts";
+import type { StoreApi } from "../core/api.ts";
 import { taskInfo, type TaskInfo } from "./compute.ts";
 
 export interface Range {
@@ -83,11 +83,11 @@ export interface Report {
   totals: { you_s: number; agent_s: number; wall_s: number; projects: number; tasks: number; prompts: number; edits: number };
 }
 
-export function buildReport(
-  store: Store,
+export async function buildReport(
+  store: StoreApi,
   input: { range: Range; project?: string | null; exclude?: string[]; detail?: boolean; detailLimit?: number },
-): Report {
-  const { perDay, facts, wall_s } = store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
+): Promise<Report> {
+  const { perDay, facts, wall_s } = await store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
 
   const byTask = new Map<string, TaskRow>();
   const rowFor = (project: string, branch: string): TaskRow => {
@@ -131,7 +131,7 @@ export function buildReport(
       const notes: NonNullable<TaskRow["notes"]> = [];
       const groups: NonNullable<TaskRow["task_groups"]> = [];
       for (const branch of row.branches) {
-        const found = store.worklogActivity(row.project, branch, input.range.from, input.range.to);
+        const found = await store.worklogActivity(row.project, branch, input.range.from, input.range.to);
         for (const n of found.notes) notes.push({ type: n.type, title: n.title, at: new Date(n.created_at * 1000).toISOString().slice(0, 10) });
         for (const g of found.groups) groups.push({ name: g.task_group, done: g.completed, total: g.total });
       }
@@ -225,8 +225,8 @@ const csvCell = (value: unknown): string => {
 };
 
 /** One line per day, project and task: ready for a spreadsheet or a time-tracking import. */
-export function renderCsv(store: Store, input: { range: Range; project?: string | null; exclude?: string[] }): string {
-  const { perDay } = store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
+export async function renderCsv(store: StoreApi, input: { range: Range; project?: string | null; exclude?: string[] }): Promise<string> {
+  const { perDay } = await store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
   const lines = ["day,project,task,kind,branch,you_minutes,agent_minutes,wall_minutes,you_hours,agent_hours"];
   for (const r of perDay) {
     const info = taskInfo(r.branch);
@@ -238,4 +238,34 @@ export function renderCsv(store: Store, input: { range: Range; project?: string 
     );
   }
   return lines.join("\n");
+}
+
+/** The compact shape the `worklog` tool answers with: durations as text, the top 20 tasks. */
+export function summarizeReport(report: Report) {
+  return {
+    period: report.range.label,
+    totals: {
+      you: formatDuration(report.totals.you_s),
+      agent: formatDuration(report.totals.agent_s),
+      wall: formatDuration(report.totals.wall_s),
+      tasks: report.totals.tasks,
+      projects: report.totals.projects,
+    },
+    by_day: report.days.map((d) => ({ day: d.day, you: formatDuration(d.you_s), agent: formatDuration(d.agent_s), wall: formatDuration(d.wall_s) })),
+    tasks: report.rows.slice(0, 20).map((r) => ({
+      project: r.project,
+      task: r.label,
+      kind: r.kind,
+      you: formatDuration(r.you_s),
+      agent: formatDuration(r.agent_s),
+      wall: formatDuration(r.wall_s),
+      days: r.days,
+      prompts: r.prompts,
+      file_edits: r.edits,
+      started_from: r.first_prompt ?? undefined,
+      task_groups: r.task_groups?.map((g) => `${g.name} ${g.done}/${g.total}`),
+      notes: r.notes?.slice(0, 6).map((n) => `${n.at} [${n.type}] ${n.title}`),
+    })),
+    more_tasks: Math.max(0, report.rows.length - 20) || undefined,
+  };
 }

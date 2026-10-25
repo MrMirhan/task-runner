@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { ServerOptions } from "@modelcontextprotocol/sdk/server/index.js";
 import { SERVER_NAME, SERVER_VERSION } from "../core/constants.ts";
 import { registerTools, type ToolContext } from "./tools.ts";
 
@@ -10,10 +11,10 @@ export const INSTRUCTIONS = [
   "For multi-step work: create_task_group, then repeat get_next_task, do it, complete_task.",
 ].join("\n");
 
-export function createServer(ctx: ToolContext): McpServer {
+export function createServer(ctx: ToolContext, options: Omit<ServerOptions, "instructions"> = {}): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: INSTRUCTIONS },
+    { ...options, instructions: INSTRUCTIONS },
   );
   registerTools(server, ctx);
   return server;

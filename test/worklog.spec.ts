@@ -144,7 +144,7 @@ test("scanning real files yields a per-task report and skips unchanged files", a
   assert.deepEqual(first, { scanned: 1, skipped: 0 });
   assert.deepEqual(await scanWorklog(store, { root: f.root, sinceDays: null }), { scanned: 0, skipped: 1 });
 
-  const report = buildReport(store, { range: WEEK, detail: true });
+  const report = (await buildReport(store, { range: WEEK, detail: true }));
   assert.equal(report.rows.length, 1);
   const row = report.rows[0];
   assert.equal(row.project, "acme-shop");
@@ -159,7 +159,7 @@ test("scanning real files yields a per-task report and skips unchanged files", a
 
   appendFileSync(f.file, f.assistant(260) + "\n");
   assert.deepEqual(await scanWorklog(store, { root: f.root, sinceDays: null }), { scanned: 1, skipped: 0 });
-  assert.equal(buildReport(store, { range: WEEK }).rows[0].agent_s, row.agent_s + 60);
+  assert.equal((await buildReport(store, { range: WEEK })).rows[0].agent_s, row.agent_s + 60);
 });
 
 test("memory notes of the branch show up as what was done", async () => {
@@ -173,7 +173,7 @@ test("memory notes of the branch show up as what was done", async () => {
   store.createTasks({ project: "acme-shop", task_group: "cart", tasks: [{ title: "a", content: "A" }], branch: "feat/SHOP-9-cart" });
 
   const now = Math.floor(Date.now() / 1000);
-  const report = buildReport(store, { range: { from: T0 - 86400, to: now + 86400, label: "x" }, detail: true });
+  const report = (await buildReport(store, { range: { from: T0 - 86400, to: now + 86400, label: "x" }, detail: true }));
   assert.equal(at > 0, true);
   // the entries are stamped with the store clock, not the transcript clock, so ask the store directly
   const activity = store.worklogActivity("acme-shop", "feat/SHOP-9-cart", 0, 4_000_000_000);
@@ -186,14 +186,14 @@ test("text, markdown and csv renderings carry the numbers", async () => {
   const f = fixture();
   const { store } = memoryStore();
   await scanWorklog(store, { root: f.root, sinceDays: null });
-  const report = buildReport(store, { range: WEEK, detail: true });
+  const report = (await buildReport(store, { range: WEEK, detail: true }));
 
   const text = renderText(report, { detail: true });
   assert.match(text, /acme-shop\s+SHOP-9\s+feature/);
   assert.match(text, /asked: add a cart page/);
   assert.match(renderMarkdown(report), /### SHOP-9 \(feature\)/);
 
-  const csv = renderCsv(store, { range: WEEK }).split("\n");
+  const csv = (await renderCsv(store, { range: WEEK })).split("\n");
   assert.equal(csv[0], "day,project,task,kind,branch,you_minutes,agent_minutes,wall_minutes,you_hours,agent_hours");
   assert.match(csv[1], /,acme-shop,SHOP-9,feature,feat\/SHOP-9-cart,1,2,/);
 });
@@ -202,9 +202,9 @@ test("excluded projects vanish from rows and totals", async () => {
   const f = fixture();
   const { store } = memoryStore();
   await scanWorklog(store, { root: f.root, sinceDays: null });
-  assert.equal(buildReport(store, { range: WEEK, exclude: ["acme-*"] }).rows.length, 0);
-  assert.equal(buildReport(store, { range: WEEK, exclude: ["acme-*"] }).totals.wall_s, 0);
-  assert.equal(buildReport(store, { range: WEEK, exclude: ["other*"] }).rows.length, 1);
+  assert.equal((await buildReport(store, { range: WEEK, exclude: ["acme-*"] })).rows.length, 0);
+  assert.equal((await buildReport(store, { range: WEEK, exclude: ["acme-*"] })).totals.wall_s, 0);
+  assert.equal((await buildReport(store, { range: WEEK, exclude: ["other*"] })).rows.length, 1);
 });
 
 test("export marks hide time that was already reported", async () => {
@@ -226,10 +226,10 @@ test("changing the caps recomputes everything", async () => {
   const f = fixture();
   const { store } = memoryStore();
   await scanWorklog(store, { root: f.root, sinceDays: null, options: { humanCapSeconds: 300, aiCapSeconds: 900 } });
-  const before = buildReport(store, { range: WEEK }).rows[0].agent_s;
+  const before = (await buildReport(store, { range: WEEK })).rows[0].agent_s;
   const rescanned = await scanWorklog(store, { root: f.root, sinceDays: null, options: { humanCapSeconds: 300, aiCapSeconds: 30 } });
   assert.equal(rescanned.scanned, 1);
-  assert.ok(buildReport(store, { range: WEEK }).rows[0].agent_s < before);
+  assert.ok((await buildReport(store, { range: WEEK })).rows[0].agent_s < before);
 });
 
 test("huge lines are read from their envelope without decoding the payload", async () => {
@@ -242,7 +242,7 @@ test("huge lines are read from their envelope without decoding the payload", asy
   );
   const { store } = memoryStore();
   await scanWorklog(store, { root: f.root, sinceDays: null });
-  const row = buildReport(store, { range: WEEK }).rows[0];
+  const row = (await buildReport(store, { range: WEEK })).rows[0];
   assert.equal(row.prompts, 3);
   assert.ok(row.agent_s >= 20 + 20 + 40 + 60 + 40);
 });

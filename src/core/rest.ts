@@ -1,11 +1,11 @@
-import { StoreError } from "../core/errors.ts";
-import type { StoreApi } from "../core/api.ts";
-import { SERVER_VERSION } from "../core/constants.ts";
-import type { ApiRequest, ApiResponse } from "../core/http.ts";
-import { handleRulesApi, isRulesPath } from "../core/rules-api.ts";
-import type { RulesStore } from "../core/rules.ts";
+import { StoreError } from "./errors.ts";
+import type { StoreApi } from "./api.ts";
+import { SERVER_VERSION } from "./constants.ts";
+import type { ApiRequest, ApiResponse } from "./http.ts";
+import { handleRulesApi, isRulesPath } from "./rules-api.ts";
+import type { RulesStore } from "./rules.ts";
 
-export type { ApiRequest, ApiResponse } from "../core/http.ts";
+export type { ApiRequest, ApiResponse } from "./http.ts";
 
 type Body = Record<string, unknown>;
 

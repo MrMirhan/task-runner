@@ -158,6 +158,11 @@ export class Store {
     return row?.key ?? null;
   }
 
+  /** Every folder a project was seen in: lets a scan resolve thousands of folders without a call per folder. */
+  projectPaths(): Array<{ path: string; project_key: string }> {
+    return this.db.all<{ path: string; project_key: string }>("SELECT path, project_key FROM project_paths");
+  }
+
   findProjectByPathPrefix(prefix: string): string | null {
     const escaped = prefix.replace(/[\\%_]/g, "\\$&");
     return (
@@ -835,6 +840,25 @@ export class Store {
     return { entities, global_entities: globalEntities, entries, tasks, stats: this.graphStats(project) };
   }
 
+  /** Everything the live panel shows, in one call. */
+  snapshot(input: { project: string; branch?: string | null; query?: string | null }) {
+    const project = required(input.project, "project");
+    const group = this.latestGroup(project, input.branch ?? null);
+    const graph = this.graphAll(project);
+    return {
+      project,
+      branch: input.branch ?? null,
+      stats: this.graphStats(project),
+      tasks: group
+        ? { summary: this.taskSummary(project, group), items: (this.taskStatus({ project, task_group: group }) as { tasks: Row[] }).tasks }
+        : null,
+      notes: this.getContext({ project, all: true, limit: 8 }).entries,
+      entities: graph.entities.slice(0, 40),
+      relations: graph.relations.length,
+      search: input.query ? this.recall({ project, q: input.query, limit: 8 }) : undefined,
+    };
+  }
+
   // ─── Tasks ─────────────────────────────────────────────
 
   createTasks(input: {
@@ -1035,6 +1059,20 @@ export class Store {
   }
 
   // ─── Worklog ───────────────────────────────────────────
+
+  worklogFileStates(paths: string[]): Record<string, { size: number; mtime: number }> {
+    const out: Record<string, { size: number; mtime: number }> = {};
+    for (let i = 0; i < paths.length; i += 400) {
+      const chunk = paths.slice(i, i + 400);
+      for (const row of this.db.all<{ path: string; size: number; mtime: number }>(
+        `SELECT path, size, mtime FROM worklog_files WHERE path IN (${chunk.map(() => "?").join(", ")})`,
+        ...chunk,
+      )) {
+        out[row.path] = { size: row.size, mtime: row.mtime };
+      }
+    }
+    return out;
+  }
 
   worklogFileState(path: string): { size: number; mtime: number } | null {
     return this.db.get<{ size: number; mtime: number }>("SELECT size, mtime FROM worklog_files WHERE path = ?", path) ?? null;
