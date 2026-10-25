@@ -1,7 +1,7 @@
 {
   "name": "task-runner",
   "displayName": "Task Runner",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Persistent knowledge-graph memory, a task runner, time tracking and shared rules for your agent. MCP tools, a session-start briefing, a live side panel and memory reminders. Local SQLite, or your own server for several machines.",
   "author": {
     "name": "Mirhan"
@@ -21,8 +21,8 @@
     "openOnStart": {
       "type": "boolean",
       "title": "Open the panel when a session starts",
-      "description": "Open the Task Runner panel once at the start of each interactive session, without taking the keyboard. Closing it keeps it closed for that session; /brain opens it again.",
-      "default": true
+      "description": "Open the Task Runner panel once at the start of each interactive session, without taking the keyboard. /brain auto on|off changes it from a session and wins over this setting.",
+      "default": false
     },
     "taste": {
       "type": "boolean",

@@ -60,6 +60,13 @@ function base(on: TestOn) {
   on('session.id', () => ({ value: 'sess-1' }))
   on('clock.now', () => ({ value: 1_700_000_000_000 }))
   on('clock.after', () => ({ value: undefined }))
+  // The cross-session store, in memory.
+  const kept = new Map<string, unknown>()
+  on('store.get', (_, e) => ({ value: kept.get(e.key) }))
+  on('store.set', (_, e) => {
+    kept.set(e.key, e.value)
+    return { value: undefined }
+  })
 }
 
 function stubCli(on: TestOn, toasts: string[] = []) {
@@ -534,7 +541,7 @@ test('the Taste tab lists what was learned and can turn learning off', async ($,
   await ui.unmount()
 })
 
-test('the panel opens once when an interactive session starts and not again after a reload', async ($, on) => {
+test('the panel opens once when an interactive session starts and not again after a reload', { options: { openOnStart: true } }, async ($, on) => {
   stubCli(on)
   on('session.start', () => ({ cwd: '/work/acme' }))
   const opened: string[] = []
@@ -553,7 +560,7 @@ test('the panel opens once when an interactive session starts and not again afte
   expect(opened).toEqual(['brain'])
 })
 
-test('the setting keeps the panel closed at start', { options: { openOnStart: false } }, async ($, on) => {
+test('by default the panel stays closed, and /brain auto on turns opening on', async ($, on) => {
   stubCli(on)
   on('session.start', () => ({ cwd: '/work/acme' }))
   const opened: string[] = []
@@ -563,5 +570,10 @@ test('the setting keeps the panel closed at start', { options: { openOnStart: fa
   })
   await $.session.start({ cwd: '/work/acme', surface: 'desktop', isInteractive: true })
   await settle()
+  expect(opened).toEqual([])
+
+  expect((await run($, 'brain', 'auto on')).text).toMatch(/opens at the start of every session/)
+  expect(opened).toEqual([])
+  expect((await run($, 'brain', 'auto off')).text).toMatch(/no longer opens/)
   expect(opened).toEqual([])
 })

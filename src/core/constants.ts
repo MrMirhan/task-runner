@@ -1,5 +1,5 @@
 export const SERVER_NAME = "task-runner";
-export const SERVER_VERSION = "1.1.1";
+export const SERVER_VERSION = "1.1.2";
 
 export const ENTITY_TYPES = [
   "preference",

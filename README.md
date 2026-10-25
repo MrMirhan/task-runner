@@ -33,7 +33,7 @@ You need Node.js 22.13 or newer. Start a new session. The plugin adds:
 | MCP server | The memory, task, time and rules tools. |
 | Session briefing | At session start, a hook puts the most important facts of the project in the agent's context. The agent does not need to call a tool to get them. |
 | Skill | Tells the agent when and how to use the tools. |
-| Panel (`/brain`) | Opens by itself when a session starts (setting `openOnStart`). Shows this session: time spent by you and the agent, prompts, file edits, commits, and what the session saved to memory. Other tabs show tasks, notes, the graph, search, the week's time and your rules. Updates while the agent works. |
+| Panel (`/brain`) | `/brain auto on` opens it at the start of every session, `/brain auto off` stops that (off by default). Shows this session: time spent by you and the agent, prompts, file edits, commits, and what the session saved to memory. Other tabs show tasks, notes, the graph, search, the week's time and your rules. Updates while the agent works. |
 | `/recall <words>` | Search memory without using a model turn. |
 | `/remember <text>` | Save a note. |
 | `/worklog [week]` | Time spent by you and the agent, per project and task. |

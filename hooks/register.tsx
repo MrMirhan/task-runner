@@ -166,6 +166,12 @@ async function loadTaste($: EngineInterface): Promise<void> {
   if (raw && Array.isArray(raw.preferences)) await update($, tasteValue, () => raw.preferences)
 }
 
+// The person's choice from /brain auto or the panel, kept across sessions; the plugin setting until they choose.
+async function autoOpen($: EngineInterface, byDefault: boolean): Promise<boolean> {
+  const chosen = await $.store.get('openOnStart')
+  return typeof chosen === 'boolean' ? chosen : byDefault
+}
+
 async function tasteIsOn($: EngineInterface, byDefault: boolean): Promise<boolean> {
   const mode = await read($, tasteModeValue)
   return mode === null ? byDefault : mode === 'on'
@@ -469,7 +475,7 @@ export const register: Register = (on, options) => {
   const wantsCommitNotes = options.commitNotes !== false
   const wantsApproval = options.approve !== false
   const tasteByDefault = options.taste !== false
-  const wantsAutoOpen = options.openOnStart !== false
+  const autoByDefault = options.openOnStart === true
   // The person's messages of the running turn that look like they carry a preference.
   let tasteCandidates: string[] = []
 
@@ -479,7 +485,7 @@ export const register: Register = (on, options) => {
   let pendingNudge: string | null = null
 
   on('session.start', async ($, e, next) => {
-    if (wantsAutoOpen && e.isInteractive && !(await read($, autoOpenedValue))) {
+    if (e.isInteractive && !(await read($, autoOpenedValue)) && (await autoOpen($, autoByDefault))) {
       await update($, autoOpenedValue, () => true)
       // No focus: the prompt keeps the keys; the person closes or moves the pane as any other.
       background($.ui.open({ id: PANE, title: TITLE }))
@@ -488,7 +494,7 @@ export const register: Register = (on, options) => {
     background(loadSession($, true))
     background(loadTaste($))
     try {
-      await $.command.register({ name: 'brain', description: 'Open the task and memory panel' })
+      await $.command.register({ name: 'brain', description: 'Open the task and memory panel; auto on|off opens it at every session start', argumentHint: '[auto on|off]' })
       await $.command.register({ name: 'recall', description: 'Search project memory', argumentHint: '<keywords>' })
       await $.command.register({ name: 'remember', description: 'Save a note to project memory', argumentHint: '<text>' })
       await $.command.register({ name: 'rules', description: 'Show your rules, or approve or reject a proposal', argumentHint: '[approve|reject <id>]' })
@@ -500,7 +506,14 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'brain' }, async $ => {
+  on('command.run', { command: 'brain' }, async ($, e) => {
+    const [word, value] = e.args.trim().toLowerCase().split(/\s+/)
+    if (word === 'auto') {
+      const enabled = value === 'on' ? true : value === 'off' ? false : !(await autoOpen($, autoByDefault))
+      await $.store.set('openOnStart', enabled)
+      $.ui.invalidate('ui.render')
+      return { text: enabled ? 'The panel now opens at the start of every session. /brain auto off stops it.' : 'The panel no longer opens by itself. /brain opens it.' }
+    }
     await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true })
     background(refresh($))
     return {}
@@ -892,6 +905,17 @@ export const register: Register = (on, options) => {
             mark: tasteOn ? '●' : '○',
             markColor: tasteOn ? '#3fb950' : MUTED,
             onPress: () => select('taste'),
+          }),
+        )
+        const auto = await autoOpen($, autoByDefault)
+        lines.push(
+          row('auto-open-toggle', 'Open this panel when a session starts: ' + (auto ? 'on' : 'off'), {
+            mark: auto ? '●' : '○',
+            markColor: auto ? '#3fb950' : MUTED,
+            onPress: async () => {
+              await $.store.set('openOnStart', !auto)
+              $.ui.invalidate('ui.render')
+            },
           }),
         )
         if (rules) {
