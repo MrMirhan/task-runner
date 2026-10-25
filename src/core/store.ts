@@ -1089,11 +1089,26 @@ export class Store {
     );
   }
 
-  clearWorklog(): void {
+  /** Drops the time rows of every transcript, or only of those whose key starts with `prefix`. */
+  clearWorklog(prefix?: string): void {
+    const where = prefix === undefined ? "" : " WHERE substr(%c, 1, ?) = ?";
+    const args: SqlValue[] = prefix === undefined ? [] : [prefix.length, prefix];
     this.db.transaction(() => {
-      this.db.run("DELETE FROM worklog_minutes");
-      this.db.run("DELETE FROM worklog_facts");
-      this.db.run("DELETE FROM worklog_files");
+      this.db.run(`DELETE FROM worklog_minutes${where.replace("%c", "file")}`, ...args);
+      this.db.run(`DELETE FROM worklog_facts${where.replace("%c", "file")}`, ...args);
+      this.db.run(`DELETE FROM worklog_files${where.replace("%c", "path")}`, ...args);
+    });
+  }
+
+  dropWorklogFiles(paths: string[]): void {
+    this.db.transaction(() => {
+      for (let i = 0; i < paths.length; i += 400) {
+        const chunk = paths.slice(i, i + 400);
+        const list = chunk.map(() => "?").join(", ");
+        this.db.run(`DELETE FROM worklog_minutes WHERE file IN (${list})`, ...chunk);
+        this.db.run(`DELETE FROM worklog_facts WHERE file IN (${list})`, ...chunk);
+        this.db.run(`DELETE FROM worklog_files WHERE path IN (${list})`, ...chunk);
+      }
     });
   }
 

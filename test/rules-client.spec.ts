@@ -1,48 +1,16 @@
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { createServer, type Server } from "node:http";
 import { mkdirSync, mkdtempSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Store } from "../src/core/store.ts";
-import { handleApp } from "../src/http/app.ts";
-import { RulesStore } from "../src/core/rules.ts";
+import { startServer } from "./helpers.ts";
 import { RemoteRulesClient, readRulesCache, resolveForHook } from "../src/node/remote.ts";
-import { openDb } from "../src/node/sqlite.ts";
 
 const entry = new URL("../src/cli/index.ts", import.meta.url).pathname;
-
-/** The Worker's handler on a Node HTTP server: same routes, same auth, an in-memory database. */
-async function startServer(key = "test-key-0123456789abcdefghij") {
-  const db = openDb(":memory:");
-  const rules = new RulesStore(db);
-  const store = new Store(db);
-  const server: Server = createServer((req, res) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", async () => {
-      const headers = new Headers();
-      for (const [name, value] of Object.entries(req.headers)) if (typeof value === "string") headers.set(name, value);
-      const method = req.method ?? "GET";
-      const request = new Request(`http://${req.headers.host}${req.url}`, {
-        method,
-        headers,
-        body: method === "GET" || method === "HEAD" ? undefined : Buffer.concat(chunks),
-      });
-      const out = await handleApp({ store, rules, key }, request);
-      res.writeHead(out.status, Object.fromEntries(out.headers));
-      res.end(Buffer.from(await out.arrayBuffer()));
-    });
-  });
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { url, rules, store, close: () => new Promise<void>((r) => server.close(() => r())), key };
-}
 
 const ctx = { project: "acme-shop", org: "acme", device: "dev-1" };
 

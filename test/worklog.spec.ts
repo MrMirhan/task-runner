@@ -7,7 +7,8 @@ import { test } from "node:test";
 import { computeWorklog, taskInfo, type RawEvent, type Resolvers } from "../src/worklog/compute.ts";
 import { buildReport, formatDuration, renderCsv, renderMarkdown, renderText, resolveRange } from "../src/worklog/report.ts";
 import { scanWorklog } from "../src/worklog/scan.ts";
-import { memoryStore } from "./helpers.ts";
+import { remoteStore } from "../src/node/backend.ts";
+import { memoryStore, startServer } from "./helpers.ts";
 
 const T0 = Date.UTC(2026, 9, 21, 9, 0, 0) / 1000; // Wed 2026-10-21 09:00 UTC
 
@@ -245,4 +246,36 @@ test("huge lines are read from their envelope without decoding the payload", asy
   const row = (await buildReport(store, { range: WEEK })).rows[0];
   assert.equal(row.prompts, 3);
   assert.ok(row.agent_s >= 20 + 20 + 40 + 60 + 40);
+});
+
+test("device-scoped scans keep machines apart, drop unprefixed rows once and recompute on new caps", async () => {
+  const f = fixture();
+  const { store } = memoryStore();
+  await scanWorklog(store, { root: f.root, sinceDays: null });
+  const single = (await buildReport(store, { range: WEEK })).totals.agent_s;
+
+  await scanWorklog(store, { root: f.root, sinceDays: null, deviceId: "mac" });
+  assert.equal((await buildReport(store, { range: WEEK })).totals.agent_s, single, "the unprefixed copy is gone");
+  await scanWorklog(store, { root: f.root, sinceDays: null, deviceId: "pc" });
+  assert.equal((await buildReport(store, { range: WEEK })).totals.agent_s, single * 2, "two machines add up");
+
+  await scanWorklog(store, { root: f.root, sinceDays: null, deviceId: "mac", options: { humanCapSeconds: 300, aiCapSeconds: 30 } });
+  const after = (await buildReport(store, { range: WEEK })).totals.agent_s;
+  assert.ok(after < single * 2 && after > single, "only mac was recomputed");
+});
+
+test("a signed-in machine uploads its time rows to the server", async () => {
+  const f = fixture();
+  const s = await startServer();
+  try {
+    const remote = remoteStore({ url: s.url, key: s.key });
+    await remote.setContext({ project: "acme-shop", project_path: f.repo });
+    assert.deepEqual(await scanWorklog(remote, { root: f.root, sinceDays: null, deviceId: "mac" }), { scanned: 1, skipped: 0 });
+    assert.deepEqual(await scanWorklog(remote, { root: f.root, sinceDays: null, deviceId: "mac" }), { scanned: 0, skipped: 1 });
+    const report = await buildReport(s.store, { range: WEEK });
+    assert.equal(report.rows[0].project, "acme-shop");
+    assert.equal(report.rows[0].prompts, 2);
+  } finally {
+    await s.close();
+  }
 });

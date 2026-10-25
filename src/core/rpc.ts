@@ -10,7 +10,7 @@ export const STORE_METHODS = [
   "findEntityById", "neighbors", "recall", "graphAll", "graphStats", "entityNames", "consolidate", "digest", "snapshot",
   "createTasks", "nextTask", "completeTask", "failTask", "taskStatus", "taskSummary", "taskResult", "latestGroup",
   "listTaskGroups", "clearTasks",
-  "worklogFileStates", "worklogSetting", "setWorklogSetting", "clearWorklog", "replaceWorklogFile", "worklogRows",
+  "worklogFileStates", "worklogSetting", "setWorklogSetting", "clearWorklog", "dropWorklogFiles", "replaceWorklogFile", "worklogRows",
   "worklogActivity", "worklogPending", "worklogMarkExported",
   "exportAll", "importAll",
 ] as const;

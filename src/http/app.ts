@@ -23,7 +23,8 @@ export interface AppDeps {
   mcpOptions?: Omit<ServerOptions, "instructions">;
 }
 
-const MAX_BODY = 1024 * 1024;
+// Room for one long transcript's time rows in a single upload.
+const MAX_BODY = 8 * 1024 * 1024;
 const CONTEXT_SETTING = "mcp_context";
 
 const SECURITY_HEADERS = {

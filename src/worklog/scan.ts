@@ -273,9 +273,10 @@ export async function scanWorklog(
 ): Promise<ScanResult> {
   const options = input.options ?? DEFAULT_OPTIONS;
   const signature = `${options.humanCapSeconds}:${options.aiCapSeconds}:1`;
+  const prefix = input.deviceId ? `${input.deviceId}:` : undefined;
   const settingKey = input.deviceId ? `${SETTING_KEY}:${input.deviceId}` : SETTING_KEY;
   if ((await store.worklogSetting(settingKey)) !== signature) {
-    if (!input.deviceId) await store.clearWorklog();
+    await store.clearWorklog(prefix);
     await store.setWorklogSetting(settingKey, signature);
   }
 
@@ -283,7 +284,14 @@ export async function scanWorklog(
   const result: ScanResult = { scanned: 0, skipped: 0 };
   const sinceDays = input.sinceDays === undefined ? 120 : input.sinceDays;
   const files = listTranscripts(input.root ?? transcriptRoot(), sinceDays);
-  const keyOf = (path: string) => (input.deviceId ? `${input.deviceId}:${path}` : path);
+  const keyOf = (path: string) => (prefix ? `${prefix}${path}` : path);
+
+  // Earlier builds stored this machine's files without the device prefix; reading them again under
+  // the prefix would count their time twice.
+  if (prefix && (await store.worklogSetting(SETTING_KEY))) {
+    await store.dropWorklogFiles(files.map((f) => f.path));
+    await store.setWorklogSetting(SETTING_KEY, "");
+  }
   const known = await store.worklogFileStates(files.map((f) => keyOf(f.path)));
 
   for (const file of files) {

@@ -21730,7 +21730,7 @@ function registerTools(server, ctx) {
       annotations: { ...WRITE, idempotentHint: true }
     },
     ({ project, project_path, project_name, branch, pr }) => run(async () => {
-      const detected = session.detected();
+      const detected = await session.detected();
       let next;
       if (project) {
         const sameAsDetected = detected?.project === project;
@@ -21747,7 +21747,7 @@ function registerTools(server, ctx) {
         throw new StoreError("invalid", "project is required: no project could be detected");
       }
       const stored = await store.setContext({ project: next.project, project_path: next.project_path, project_name });
-      session.set(next);
+      await session.set(next);
       return {
         project: next.project,
         branch: next.branch ?? void 0,
@@ -21774,7 +21774,7 @@ function registerTools(server, ctx) {
         (p) => !needle || `${p.key} ${p.project_path ?? ""}`.toLowerCase().includes(needle)
       );
       return {
-        current: session.get().project,
+        current: (await session.get()).project,
         total: all.length,
         projects: all.slice(0, limit ?? 20).map((p) => ({
           key: p.key,
@@ -21797,7 +21797,7 @@ function registerTools(server, ctx) {
       annotations: READ
     },
     ({ limit, type, full }) => run(async () => {
-      const s = session.get();
+      const s = await session.get();
       const { entries } = await store.getContext({ project: s.project, branch: s.branch, pr: s.pr, limit, type });
       return {
         project: s.project,
@@ -21828,7 +21828,7 @@ function registerTools(server, ctx) {
       annotations: WRITE
     },
     ({ content, title, type, tags, scope }) => run(async () => {
-      const s = session.get();
+      const s = await session.get();
       const wanted = (type ?? "note").trim().toLowerCase();
       const known = ENTRY_TYPES.includes(wanted);
       const effective = scope ?? "project";
@@ -21864,7 +21864,7 @@ function registerTools(server, ctx) {
       annotations: WRITE
     },
     ({ name, entity_type, observations, keywords, summary, importance, scope }) => run(async () => {
-      const project = scope === "global" ? GLOBAL_PROJECT : session.get().project;
+      const project = scope === "global" ? GLOBAL_PROJECT : (await session.get()).project;
       return store.upsertEntity({
         project,
         name,
@@ -21887,7 +21887,7 @@ function registerTools(server, ctx) {
       },
       annotations: DESTRUCTIVE
     },
-    ({ fact_id, new_fact }) => run(() => store.correctFact({ project: session.get().project, observation_id: fact_id, new_fact }))
+    ({ fact_id, new_fact }) => run(async () => store.correctFact({ project: (await session.get()).project, observation_id: fact_id, new_fact }))
   );
   server.registerTool(
     "link",
@@ -21907,11 +21907,11 @@ function registerTools(server, ctx) {
     },
     ({ from, to, relation, from_type, to_type, context: context2, remove }) => run(async () => {
       if (remove) {
-        return store.unlink({ project: session.get().project, from_name: from, from_type, to_name: to, to_type, relation_type: relation });
+        return store.unlink({ project: (await session.get()).project, from_name: from, from_type, to_name: to, to_type, relation_type: relation });
       }
       try {
         return await store.link({
-          project: session.get().project,
+          project: (await session.get()).project,
           from_name: from,
           from_type,
           to_name: to,
@@ -21941,11 +21941,11 @@ function registerTools(server, ctx) {
       annotations: READ
     },
     ({ query, entity_type, limit, all_projects }) => run(async () => {
-      const s = session.get();
+      const s = await session.get();
       const found = await store.recall({ project: s.project, q: query, entity_type, limit, all_projects });
       return {
         entities: found.entities.map((e) => shapeEntity(e, s)),
-        related: found.related.length ? found.related.map((r) => `${r.name} (${r.entity_type}) ${r.relation} ${r.via}`) : void 0,
+        related: found.related.length ? found.related.map((r) => r.outgoing ? `${r.via} ${r.relation} ${r.name} (${r.entity_type})` : `${r.name} (${r.entity_type}) ${r.relation} ${r.via}`) : void 0,
         notes: found.entries.map((e) => ({
           id: e.id,
           type: e.type,
@@ -21966,7 +21966,7 @@ function registerTools(server, ctx) {
       annotations: READ
     },
     ({ name, entity_type }) => run(async () => {
-      const s = session.get();
+      const s = await session.get();
       const d = await store.describe({ project: s.project, name, entity_type });
       const rel = (r, other) => ({
         relation: r.relation_type,
@@ -21993,7 +21993,7 @@ function registerTools(server, ctx) {
       inputSchema: { name: external_exports.string(), entity_type: entityType.optional() },
       annotations: DESTRUCTIVE
     },
-    ({ name, entity_type }) => run(() => store.forget({ project: session.get().project, name, entity_type }))
+    ({ name, entity_type }) => run(async () => store.forget({ project: (await session.get()).project, name, entity_type }))
   );
   server.registerTool(
     "graph_stats",
@@ -22007,7 +22007,7 @@ function registerTools(server, ctx) {
       annotations: READ
     },
     ({ check: check2, max_age_days }) => run(async () => {
-      const s = session.get();
+      const s = await session.get();
       const stats = await store.graphStats(s.project);
       if (!check2) return { project: s.project, ...stats };
       const found = await store.consolidate({ project: s.project, max_age_days });
@@ -22079,11 +22079,11 @@ function registerTools(server, ctx) {
         annotations: READ
       },
       ({ range, from, to, project, detail }) => run(
-        () => worklog({
+        async () => worklog({
           range: range ?? "week",
           from,
           to,
-          project: project === "current" ? session.get().project : project ?? null,
+          project: project === "current" ? (await session.get()).project : project ?? null,
           detail
         })
       )
@@ -22109,12 +22109,12 @@ function registerTools(server, ctx) {
         throw new StoreError("invalid", "Provide markdown with '## Task N: Title' sections, or a non-empty tasks array");
       }
       return store.createTasks({
-        project: session.get().project,
+        project: (await session.get()).project,
         task_group: slugify(name),
         tasks: list,
         system_prompt,
         replace,
-        branch: session.get().branch ?? null
+        branch: (await session.get()).branch ?? null
       });
     })
   );
@@ -22126,8 +22126,8 @@ function registerTools(server, ctx) {
       inputSchema: { task_group: external_exports.string().optional().describe("Defaults to the latest group") },
       annotations: { ...WRITE, idempotentHint: false }
     },
-    ({ task_group }) => run(() => {
-      const s = session.get();
+    ({ task_group }) => run(async () => {
+      const s = await session.get();
       return store.nextTask({ project: s.project, task_group, branch: s.branch ?? null });
     })
   );
@@ -22144,8 +22144,8 @@ function registerTools(server, ctx) {
       },
       annotations: WRITE
     },
-    ({ task_id, result, status, task_group }) => run(() => {
-      const project = session.get().project;
+    ({ task_id, result, status, task_group }) => run(async () => {
+      const project = (await session.get()).project;
       return status === "failed" ? store.failTask({ project, task_id, error: result, task_group }) : store.completeTask({ project, task_id, result, task_group });
     })
   );
@@ -22161,7 +22161,7 @@ function registerTools(server, ctx) {
       annotations: READ
     },
     ({ task_group, task_id }) => run(async () => {
-      const s = session.get();
+      const s = await session.get();
       const project = s.project;
       if (task_id) return store.taskResult({ project, task_id, task_group });
       const status = await store.taskStatus({ project, task_group, branch: s.branch ?? null });
@@ -22176,7 +22176,7 @@ function registerTools(server, ctx) {
       inputSchema: { task_group: external_exports.string().optional().describe("Omit to clear every group") },
       annotations: DESTRUCTIVE
     },
-    ({ task_group }) => run(() => store.clearTasks({ project: session.get().project, task_group }))
+    ({ task_group }) => run(async () => store.clearTasks({ project: (await session.get()).project, task_group }))
   );
 }
 var ok, fail, day, clip, fact, looksLikePath, READ, WRITE, DESTRUCTIVE, entityType;
@@ -22207,10 +22207,10 @@ var init_tools = __esm({
 });
 
 // src/mcp/server.ts
-function createServer(ctx) {
+function createServer(ctx, options = {}) {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: INSTRUCTIONS }
+    { ...options, instructions: INSTRUCTIONS }
   );
   registerTools(server, ctx);
   return server;
@@ -22241,590 +22241,26 @@ var init_session = __esm({
     SessionHolder = class {
       current = null;
       detect;
-      constructor(detect) {
+      persist;
+      constructor(detect, persist = null) {
         this.detect = detect;
+        this.persist = persist;
       }
-      get() {
-        if (!this.current && this.detect) this.current = this.detect();
+      async get() {
+        if (!this.current && this.detect) this.current = await this.detect();
         if (!this.current) throw new StoreError("invalid", "No project context. Call set_context first.");
         return this.current;
       }
-      set(next) {
+      async set(next) {
         this.current = next;
+        await this.persist?.(next);
         return next;
       }
       /** The auto-detected scope, ignoring any explicit override. */
-      detected() {
-        return this.detect ? this.detect() : null;
+      async detected() {
+        return this.detect ? await this.detect() : null;
       }
     };
-  }
-});
-
-// src/worklog/compute.ts
-function localDay(epochSeconds) {
-  const d = new Date(epochSeconds * 1e3);
-  const pad2 = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-function normalizeBranch(branch) {
-  return branch && branch !== "HEAD" ? branch : NO_BRANCH;
-}
-function computeWorklog(events, resolvers, options = DEFAULT_OPTIONS) {
-  const sorted = [...events].sort((a, b) => a.t - b.t);
-  const minutes = /* @__PURE__ */ new Map();
-  const facts = /* @__PURE__ */ new Map();
-  const focusAt = [];
-  let focus = null;
-  for (const e of sorted) {
-    for (const file of e.paths ?? []) focus = resolvers.path(file) ?? focus;
-    focusAt.push(focus);
-  }
-  const firstFocus = focusAt.find((f) => f !== null) ?? null;
-  const index = new Map(sorted.map((e, i) => [e, i]));
-  const scopeOf2 = (e) => {
-    const here = resolvers.cwd(e.cwd);
-    if (here.isRepo) return { project: here.project, branch: normalizeBranch(e.branch) };
-    const followed = focusAt[index.get(e) ?? 0] ?? firstFocus;
-    return { project: followed ?? here.project, branch: followed ? NO_BRANCH : normalizeBranch(e.branch) };
-  };
-  const addSeconds = (end, seconds, kind, scope, sessionId) => {
-    let from = end - seconds;
-    while (from < end - 0.5) {
-      const minute = Math.floor(from / 60);
-      const next = Math.min(end, (minute + 1) * 60);
-      const secs = Math.round(next - from);
-      if (secs > 0) {
-        const key = `${minute}|${kind}|${scope.project}|${scope.branch}`;
-        const row = minutes.get(key);
-        if (row) row.secs += secs;
-        else minutes.set(key, { sessionId, minute, kind, ...scope, secs });
-      }
-      from = next;
-    }
-  };
-  const fact2 = (e) => {
-    const scope = scopeOf2(e);
-    const day4 = localDay(e.t);
-    const key = `${day4}|${scope.project}|${scope.branch}`;
-    let row = facts.get(key);
-    if (!row) {
-      row = { day: day4, ...scope, prompts: 0, edits: 0, firstPrompt: null };
-      facts.set(key, row);
-    }
-    return row;
-  };
-  for (let i = 0; i < sorted.length; i++) {
-    const current = sorted[i];
-    if (current.kind === "prompt") {
-      const row = fact2(current);
-      row.prompts += 1;
-      if (!row.firstPrompt && current.text) row.firstPrompt = current.text;
-    }
-    if (current.edits) fact2(current).edits += current.edits;
-    if (i === 0) continue;
-    const previous = sorted[i - 1];
-    const gap = current.t - previous.t;
-    if (gap <= 0) continue;
-    if (current.kind === "system") continue;
-    if (current.kind === "prompt") {
-      addSeconds(current.t, Math.min(gap, options.humanCapSeconds), "human", scopeOf2(previous), current.sessionId);
-    } else {
-      addSeconds(current.t, Math.min(gap, options.aiCapSeconds), "ai", scopeOf2(current), current.sessionId);
-    }
-  }
-  return { minutes: [...minutes.values()], facts: [...facts.values()] };
-}
-function taskInfo(branch) {
-  if (branch === NO_BRANCH || branch === "main" || branch === "master" || branch === "develop") {
-    return { label: branch === NO_BRANCH ? "(no branch)" : branch, kind: "other" };
-  }
-  const ticket = TICKET.exec(branch)?.[1];
-  const head = branch.split("/")[0].toLowerCase();
-  const kind = /^(feat|feature)$/.test(head) ? "feature" : /^(fix|bugfix|hotfix)$/.test(head) ? "fix" : /^(chore|refactor|docs|test|ci|build|perf|style)$/.test(head) ? "chore" : "other";
-  return { label: ticket ? ticket.toUpperCase() : branch, kind };
-}
-var DEFAULT_OPTIONS, NO_BRANCH, TICKET;
-var init_compute = __esm({
-  "src/worklog/compute.ts"() {
-    "use strict";
-    DEFAULT_OPTIONS = { humanCapSeconds: 5 * 60, aiCapSeconds: 15 * 60 };
-    NO_BRANCH = "(none)";
-    TICKET = /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]*-\d+)(?:[^A-Za-z0-9]|$)/;
-  }
-});
-
-// src/worklog/report.ts
-function startOfDay(d) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-function parseDay(text3) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text3);
-  if (!m) throw new Error(`Invalid date '${text3}'. Use YYYY-MM-DD.`);
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-}
-function resolveRange(flags, now = /* @__PURE__ */ new Date()) {
-  const today = startOfDay(now);
-  const secs = (d) => Math.floor(d.getTime() / 1e3);
-  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-  if (flags.from || flags.to) {
-    const from = flags.from ? parseDay(flags.from) : /* @__PURE__ */ new Date(0);
-    const to = addDays(flags.to ? parseDay(flags.to) : today, 1);
-    return { from: secs(from), to: secs(to), label: `${flags.from ?? "start"} to ${flags.to ?? iso(today)}` };
-  }
-  if (flags.today) return { from: secs(today), to: secs(addDays(today, 1)), label: `Today ${iso(today)}` };
-  if (flags.yesterday) {
-    const y = addDays(today, -1);
-    return { from: secs(y), to: secs(today), label: `Yesterday ${iso(y)}` };
-  }
-  if (flags.days) {
-    const from = addDays(today, -(flags.days - 1));
-    return { from: secs(from), to: secs(addDays(today, 1)), label: `Last ${flags.days} days` };
-  }
-  if (flags.month) {
-    const first = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { from: secs(first), to: secs(new Date(today.getFullYear(), today.getMonth() + 1, 1)), label: `Month ${iso(first).slice(0, 7)}` };
-  }
-  const monday = addDays(today, -((today.getDay() + 6) % 7));
-  const start = flags.lastWeek ? addDays(monday, -7) : monday;
-  const end = addDays(start, 7);
-  return { from: secs(start), to: secs(end), label: `${flags.lastWeek ? "Last week" : "Week"} ${iso(start)} to ${iso(addDays(end, -1))}` };
-}
-function buildReport(store, input) {
-  const { perDay, facts, wall_s } = store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
-  const byTask = /* @__PURE__ */ new Map();
-  const rowFor = (project, branch) => {
-    const info = taskInfo(branch);
-    const key = `${project}\0${info.label}`;
-    let row = byTask.get(key);
-    if (!row) {
-      row = { ...info, project, branches: [], you_s: 0, agent_s: 0, wall_s: 0, prompts: 0, edits: 0, days: [], first_prompt: null };
-      byTask.set(key, row);
-    }
-    if (!row.branches.includes(branch)) row.branches.push(branch);
-    return row;
-  };
-  const days = /* @__PURE__ */ new Map();
-  for (const r of perDay) {
-    const row = rowFor(r.project_key, r.branch);
-    row.you_s += r.human_s;
-    row.agent_s += r.ai_s;
-    row.wall_s += r.wall_s;
-    if (!row.days.includes(r.day)) row.days.push(r.day);
-    const d = days.get(r.day) ?? { day: r.day, you_s: 0, agent_s: 0, wall_s: 0 };
-    d.you_s += r.human_s;
-    d.agent_s += r.ai_s;
-    d.wall_s += r.wall_s;
-    days.set(r.day, d);
-  }
-  for (const f of facts) {
-    const row = rowFor(f.project_key, f.branch);
-    row.prompts += f.prompts;
-    row.edits += f.edits;
-    if (!row.first_prompt && f.first_prompt) row.first_prompt = f.first_prompt;
-  }
-  const rows = [...byTask.values()].filter((r) => r.you_s + r.agent_s > 0 || r.prompts > 0).sort((a, b) => b.you_s + b.agent_s - (a.you_s + a.agent_s));
-  if (input.detail) {
-    for (const row of rows.slice(0, input.detailLimit ?? 15)) {
-      const notes = [];
-      const groups = [];
-      for (const branch of row.branches) {
-        const found = store.worklogActivity(row.project, branch, input.range.from, input.range.to);
-        for (const n of found.notes) notes.push({ type: n.type, title: n.title, at: new Date(n.created_at * 1e3).toISOString().slice(0, 10) });
-        for (const g of found.groups) groups.push({ name: g.task_group, done: g.completed, total: g.total });
-      }
-      row.notes = notes;
-      row.task_groups = groups;
-    }
-  }
-  return {
-    range: input.range,
-    rows,
-    days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)),
-    totals: {
-      you_s: rows.reduce((n, r) => n + r.you_s, 0),
-      agent_s: rows.reduce((n, r) => n + r.agent_s, 0),
-      wall_s,
-      projects: new Set(rows.map((r) => r.project)).size,
-      tasks: rows.length,
-      prompts: rows.reduce((n, r) => n + r.prompts, 0),
-      edits: rows.reduce((n, r) => n + r.edits, 0)
-    }
-  };
-}
-function formatDuration(seconds) {
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 1) return seconds > 0 ? "<1m" : "0m";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
-}
-function renderText(report, options = {}) {
-  const { totals: t } = report;
-  const lines = [
-    report.range.label,
-    `You ${formatDuration(t.you_s)} \xB7 agent ${formatDuration(t.agent_s)} \xB7 wall clock ${formatDuration(t.wall_s)} \xB7 ${t.tasks} tasks in ${t.projects} projects`,
-    "(agent time adds up across parallel sessions; wall clock counts each minute once)",
-    ""
-  ];
-  if (report.rows.length === 0) return [...lines, "No activity in this range."].join("\n");
-  lines.push(`${pad("PROJECT", 24)} ${pad("TASK", 26)} ${pad("KIND", 8)} ${pad("YOU", 8, true)} ${pad("AGENT", 8, true)} ${pad("WALL", 8, true)} ${pad("PROMPTS", 7, true)} ${pad("EDITS", 5, true)}`);
-  for (const r of report.rows) {
-    lines.push(
-      `${pad(r.project, 24)} ${pad(r.label, 26)} ${pad(r.kind, 8)} ${pad(formatDuration(r.you_s), 8, true)} ${pad(formatDuration(r.agent_s), 8, true)} ${pad(formatDuration(r.wall_s), 8, true)} ${pad(String(r.prompts), 7, true)} ${pad(String(r.edits), 5, true)}`
-    );
-    if (options.detail) {
-      if (r.first_prompt) lines.push(`    asked: ${r.first_prompt}`);
-      for (const g of r.task_groups ?? []) lines.push(`    tasks: ${g.name} ${g.done}/${g.total}`);
-      for (const n of r.notes ?? []) lines.push(`    ${n.at} [${n.type}] ${n.title}`);
-    }
-  }
-  return lines.join("\n");
-}
-function renderMarkdown(report) {
-  const { totals: t } = report;
-  const out = [
-    `# Worklog: ${report.range.label}`,
-    "",
-    `- You: **${formatDuration(t.you_s)}**`,
-    `- Agent: **${formatDuration(t.agent_s)}** (adds up across parallel sessions)`,
-    `- Wall clock: **${formatDuration(t.wall_s)}**`,
-    `- ${t.tasks} tasks in ${t.projects} projects, ${t.prompts} prompts, ${t.edits} file edits`,
-    ""
-  ];
-  const projects = [...new Set(report.rows.map((r) => r.project))];
-  for (const project of projects) {
-    const rows = report.rows.filter((r) => r.project === project);
-    out.push(`## ${project}`, "");
-    for (const r of rows) {
-      out.push(`### ${r.label} (${r.kind})`, "", `You ${formatDuration(r.you_s)} \xB7 agent ${formatDuration(r.agent_s)} \xB7 wall ${formatDuration(r.wall_s)} \xB7 ${r.days.join(", ")}`, "");
-      if (r.first_prompt) out.push(`Started from: "${r.first_prompt}"`, "");
-      for (const g of r.task_groups ?? []) out.push(`- Task group \`${g.name}\`: ${g.done}/${g.total} done`);
-      for (const n of r.notes ?? []) out.push(`- ${n.at} [${n.type}] ${n.title}`);
-      if ((r.notes?.length ?? 0) + (r.task_groups?.length ?? 0) > 0) out.push("");
-    }
-  }
-  return out.join("\n");
-}
-function renderCsv(store, input) {
-  const { perDay } = store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
-  const lines = ["day,project,task,kind,branch,you_minutes,agent_minutes,wall_minutes,you_hours,agent_hours"];
-  for (const r of perDay) {
-    const info = taskInfo(r.branch);
-    const hours = (s) => (s / 3600).toFixed(2);
-    lines.push(
-      [r.day, r.project_key, info.label, info.kind, r.branch, Math.round(r.human_s / 60), Math.round(r.ai_s / 60), Math.round(r.wall_s / 60), hours(r.human_s), hours(r.ai_s)].map(csvCell).join(",")
-    );
-  }
-  return lines.join("\n");
-}
-var iso, pad, csvCell;
-var init_report = __esm({
-  "src/worklog/report.ts"() {
-    "use strict";
-    init_compute();
-    iso = (d) => {
-      const pad2 = (n) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-    };
-    pad = (text3, width, right = false) => right ? text3.padStart(width) : text3.length > width ? `${text3.slice(0, width - 1)}\u2026` : text3.padEnd(width);
-    csvCell = (value) => {
-      const text3 = String(value ?? "");
-      return /[",\n]/.test(text3) ? `"${text3.replace(/"/g, '""')}"` : text3;
-    };
-  }
-});
-
-// src/node/project.ts
-import { execFileSync } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-function git(cwd, ...args) {
-  try {
-    const out = execFileSync("git", ["-C", cwd, ...args], {
-      encoding: "utf8",
-      timeout: 2e3,
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-    return out || null;
-  } catch {
-    return null;
-  }
-}
-function keyFromRemote(url) {
-  const parts = url.trim().replace(/\.git$/, "").split(/[/:]+/).filter(Boolean);
-  if (parts.length < 2) return null;
-  return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`.toLowerCase();
-}
-function ownerFromRemote(url) {
-  const parts = url.trim().replace(/\.git$/, "").split(/[/:]+/).filter(Boolean);
-  return parts.length >= 2 ? parts[parts.length - 2].toLowerCase() : null;
-}
-function pinned(root) {
-  try {
-    const parsed = JSON.parse(readFileSync(join(root, ".task-runner.json"), "utf8"));
-    const pick2 = (v) => typeof v === "string" && v.trim() ? v.trim() : null;
-    return { project: pick2(parsed.project), org: pick2(parsed.org) };
-  } catch {
-    return { project: null, org: null };
-  }
-}
-function detectProject(cwd, lookupByPath, env = process.env) {
-  let real = cwd;
-  try {
-    real = realpathSync(cwd);
-  } catch {
-  }
-  const top = git(real, "rev-parse", "--show-toplevel");
-  const root = top ?? real;
-  const branch = git(real, "branch", "--show-current");
-  const remote = git(real, "remote", "get-url", "origin");
-  const common = git(real, "rev-parse", "--path-format=absolute", "--git-common-dir");
-  const mainRoot = common && basename(common) === ".git" ? dirname(common) : root;
-  const pin = pinned(root);
-  const project = env.TASK_RUNNER_PROJECT || pin.project || lookupByPath?.(root) || (mainRoot !== root ? lookupByPath?.(mainRoot) : null) || (remote ? keyFromRemote(remote) : null) || basename(root);
-  const org = env.TASK_RUNNER_ORG || pin.org || (remote ? ownerFromRemote(remote) : null);
-  return { project, project_path: root, branch, org, is_repo: top !== null };
-}
-var init_project = __esm({
-  "src/node/project.ts"() {
-    "use strict";
-  }
-});
-
-// src/worklog/scan.ts
-import { createReadStream, existsSync, readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename as basename2, dirname as dirname2, join as join2 } from "node:path";
-function transcriptRoot(env = process.env) {
-  return join2(env.CLAUDE_CONFIG_DIR || join2(homedir(), ".claude"), "projects");
-}
-function listTranscripts(root, sinceDays) {
-  const cutoff = sinceDays === null ? 0 : Date.now() / 1e3 - sinceDays * 86400;
-  const out = [];
-  let dirs = [];
-  try {
-    dirs = readdirSync(root);
-  } catch {
-    return out;
-  }
-  for (const dir of dirs) {
-    let names = [];
-    try {
-      names = readdirSync(join2(root, dir));
-    } catch {
-      continue;
-    }
-    for (const name of names) {
-      if (!name.endsWith(".jsonl")) continue;
-      const path = join2(root, dir, name);
-      try {
-        const st = statSync(path);
-        if (!st.isFile() || st.mtimeMs / 1e3 < cutoff) continue;
-        out.push({ path, size: st.size, mtime: Math.floor(st.mtimeMs / 1e3) });
-      } catch {
-      }
-    }
-  }
-  return out;
-}
-function parseToolResult(line2) {
-  if (line2.includes('"isSidechain":true')) return null;
-  const stamp = field(line2, "timestamp");
-  const t = stamp ? Date.parse(stamp) / 1e3 : NaN;
-  if (!Number.isFinite(t)) return null;
-  return { t, kind: "tool_result", cwd: field(line2, "cwd"), branch: field(line2, "gitBranch"), sessionId: field(line2, "sessionId") ?? "unknown" };
-}
-function parseLine(line2) {
-  if (line2.includes('"type":"tool_result"') && line2.includes('"type":"user"')) return parseToolResult(line2);
-  if (!line2.includes('"type":"user"') && !line2.includes('"type":"assistant"')) return null;
-  let d;
-  try {
-    d = JSON.parse(line2);
-  } catch {
-    return null;
-  }
-  if (d.isSidechain || d.type !== "user" && d.type !== "assistant" || typeof d.timestamp !== "string") return null;
-  const t = Date.parse(d.timestamp) / 1e3;
-  if (!Number.isFinite(t)) return null;
-  const base = {
-    t,
-    cwd: typeof d.cwd === "string" ? d.cwd : null,
-    branch: typeof d.gitBranch === "string" ? d.gitBranch : null,
-    sessionId: typeof d.sessionId === "string" ? d.sessionId : "unknown"
-  };
-  const content = d.message?.content;
-  if (d.type === "assistant") {
-    const uses = Array.isArray(content) ? content.filter((c) => c?.type === "tool_use") : [];
-    const edits = uses.filter((c) => EDIT_TOOLS.has(c.name)).length;
-    const paths = uses.filter((c) => FILE_TOOLS.has(c.name)).map((c) => c.input?.file_path ?? c.input?.notebook_path).filter((p) => typeof p === "string" && p.startsWith("/"));
-    return { ...base, kind: "assistant", edits, ...paths.length ? { paths } : {} };
-  }
-  if (Array.isArray(content) && content.some((c) => c?.type === "tool_result")) {
-    return { ...base, kind: "tool_result" };
-  }
-  const text3 = typeof content === "string" ? content : Array.isArray(content) ? content.filter((c) => c?.type === "text").map((c) => c.text ?? "").join(" ") : "";
-  const isHuman = d.origin?.kind === "human" && !d.isMeta && text3.trim() !== "" && !text3.trimStart().startsWith("<");
-  return isHuman ? { ...base, kind: "prompt", text: clipText(text3, 160) } : { ...base, kind: "system" };
-}
-async function* bufferLines(path) {
-  let parts = [];
-  for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 })) {
-    let start = 0;
-    for (; ; ) {
-      const nl = chunk.indexOf(10, start);
-      if (nl === -1) {
-        parts.push(chunk.subarray(start));
-        break;
-      }
-      parts.push(chunk.subarray(start, nl));
-      yield parts.length === 1 ? parts[0] : Buffer.concat(parts);
-      parts = [];
-      start = nl + 1;
-    }
-  }
-  if (parts.length > 0) yield Buffer.concat(parts);
-}
-function parseBuffer(line2) {
-  if (line2.length <= LARGE_LINE) return parseLine(line2.toString("utf8"));
-  const head = line2.toString("utf8", 0, 800);
-  if (head.includes('"type":"assistant"')) return parseLine(line2.toString("utf8"));
-  if (!head.includes('"type":"user"')) return null;
-  const tail = line2.toString("utf8", line2.length - 2e3);
-  const both = `${head} ${tail}`;
-  if (head.includes('"type":"tool_result"')) return parseToolResult(both);
-  const envelope = parseToolResult(both);
-  if (!envelope) return null;
-  return both.includes('"origin":{"kind":"human"}') ? { ...envelope, kind: "prompt", text: "(attachment)" } : { ...envelope, kind: "system" };
-}
-async function readEvents(path) {
-  const events = [];
-  for await (const line2 of bufferLines(path)) {
-    const event = parseBuffer(line2);
-    if (event) events.push(event);
-  }
-  return events;
-}
-function existingAncestor(path) {
-  let dir = path;
-  for (let i = 0; i < 40; i++) {
-    if (existsSync(dir)) return dir;
-    const parent = dirname2(dir);
-    if (parent === dir) return null;
-    dir = parent;
-  }
-  return null;
-}
-function makeResolvers(store) {
-  const byCwd = /* @__PURE__ */ new Map();
-  const byDir = /* @__PURE__ */ new Map();
-  const roots = [];
-  const detect = (dir) => detectProject(dir, (p) => store.findProjectByPath(p), {});
-  const fromMissing = (cwd) => {
-    const known = store.findProjectByPath(cwd);
-    if (known) return { project: known, isRepo: true };
-    const orca = /\/orca\/workspaces\/([^/]+)\/[^/]+/.exec(cwd);
-    if (orca) {
-      const prefix = `${cwd.slice(0, (orca.index ?? 0) + orca[0].lastIndexOf("/"))}/`;
-      return { project: store.findProjectByPathPrefix(prefix) ?? orca[1], isRepo: true };
-    }
-    if (SCRATCH.test(cwd)) return { project: "(scratch)", isRepo: false };
-    const ancestor = existingAncestor(cwd);
-    if (ancestor) {
-      const found = detect(ancestor);
-      if (found.is_repo) return { project: found.project, isRepo: true };
-    }
-    return { project: basename2(cwd), isRepo: false };
-  };
-  return {
-    cwd(cwd) {
-      if (!cwd) return { project: "(unknown)", isRepo: false };
-      let hit = byCwd.get(cwd);
-      if (!hit) {
-        if (existsSync(cwd)) {
-          const found = detect(cwd);
-          hit = SCRATCH.test(cwd) && !found.is_repo ? { project: "(scratch)", isRepo: false } : { project: found.project, isRepo: found.is_repo };
-        } else {
-          hit = fromMissing(cwd);
-        }
-        byCwd.set(cwd, hit);
-      }
-      return hit;
-    },
-    path(file) {
-      const dir = dirname2(file);
-      if (byDir.has(dir)) return byDir.get(dir) ?? null;
-      const known = roots.find((r) => file.startsWith(`${r.root}/`));
-      if (known) {
-        byDir.set(dir, known.project);
-        return known.project;
-      }
-      const ancestor = existingAncestor(dir);
-      let project = null;
-      if (ancestor) {
-        const found = detect(ancestor);
-        if (found.is_repo && !SCRATCH.test(found.project_path)) {
-          project = found.project;
-          roots.push({ root: found.project_path, project });
-        }
-      } else {
-        const missing = fromMissing(dir);
-        if (missing.isRepo) project = missing.project;
-      }
-      byDir.set(dir, project);
-      return project;
-    }
-  };
-}
-async function scanWorklog(store, input = {}) {
-  const options = input.options ?? DEFAULT_OPTIONS;
-  const signature = `${options.humanCapSeconds}:${options.aiCapSeconds}:1`;
-  if (store.worklogSetting(SETTING_KEY) !== signature) {
-    store.clearWorklog();
-    store.setWorklogSetting(SETTING_KEY, signature);
-  }
-  const resolvers = makeResolvers(store);
-  const result = { scanned: 0, skipped: 0 };
-  const sinceDays = input.sinceDays === void 0 ? 120 : input.sinceDays;
-  for (const file of listTranscripts(input.root ?? transcriptRoot(), sinceDays)) {
-    const known = store.worklogFileState(file.path);
-    if (known && known.size === file.size && known.mtime === file.mtime) {
-      result.skipped++;
-      continue;
-    }
-    input.onFile?.(file.path);
-    const events = await readEvents(file.path);
-    const { minutes, facts } = computeWorklog(events, resolvers, options);
-    store.replaceWorklogFile(file.path, file.size, file.mtime, minutes, facts);
-    result.scanned++;
-  }
-  return result;
-}
-var EDIT_TOOLS, FILE_TOOLS, SETTING_KEY, clipText, FIELD, field, LARGE_LINE, SCRATCH;
-var init_scan = __esm({
-  "src/worklog/scan.ts"() {
-    "use strict";
-    init_project();
-    init_compute();
-    EDIT_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-    FILE_TOOLS = /* @__PURE__ */ new Set([...EDIT_TOOLS, "Read"]);
-    SETTING_KEY = "worklog_options";
-    clipText = (text3, max) => {
-      const flat = text3.replace(/\s+/g, " ").trim();
-      return flat.length > max ? `${flat.slice(0, max - 1)}\u2026` : flat;
-    };
-    FIELD = /* @__PURE__ */ new Map();
-    field = (line2, name) => {
-      let re = FIELD.get(name);
-      if (!re) {
-        re = new RegExp(`"${name}":"([^"\\\\]*)"`);
-        FIELD.set(name, re);
-      }
-      const m = re.exec(line2);
-      return m ? m[1] : null;
-    };
-    LARGE_LINE = 64 * 1024;
-    SCRATCH = /\/scratchpad(\/|$)|\/tmp\/claude-|Application Support\/Claude|\/private\/tmp\//;
   }
 });
 
@@ -23121,271 +22557,6 @@ ${text3}`;
   }
 });
 
-// src/node/remote.ts
-import { chmodSync, existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, unlinkSync, writeFileSync } from "node:fs";
-import { homedir as homedir2, hostname as hostname2, platform } from "node:os";
-import { dirname as dirname3, join as join3 } from "node:path";
-function homeDir(env = process.env) {
-  return env.TASK_RUNNER_HOME || join3(homedir2(), ".task-runner");
-}
-function loadRemote(env = process.env) {
-  if (env.TASK_RUNNER_REMOTE_URL && env.TASK_RUNNER_REMOTE_KEY) {
-    return { url: env.TASK_RUNNER_REMOTE_URL.replace(/\/+$/, ""), key: env.TASK_RUNNER_REMOTE_KEY };
-  }
-  try {
-    const parsed = JSON.parse(readFileSync2(remoteFile(env), "utf8"));
-    return parsed.url && parsed.key ? { url: parsed.url.replace(/\/+$/, ""), key: parsed.key } : null;
-  } catch {
-    return null;
-  }
-}
-function saveRemote(config2, env = process.env) {
-  const file = remoteFile(env);
-  mkdirSync(dirname3(file), { recursive: true, mode: 448 });
-  writeFileSync(file, JSON.stringify(config2), { mode: 384 });
-  chmodSync(file, 384);
-}
-function clearRemote(env = process.env) {
-  const file = remoteFile(env);
-  if (!existsSync2(file)) return false;
-  unlinkSync(file);
-  return true;
-}
-function deviceInfo(env = process.env) {
-  const file = deviceFile(env);
-  try {
-    const parsed = JSON.parse(readFileSync2(file, "utf8"));
-    if (parsed.id && parsed.label) return { id: parsed.id, label: parsed.label, platform: parsed.platform ?? platform() };
-  } catch {
-  }
-  const info = {
-    id: `dev-${crypto.randomUUID().slice(0, 8)}`,
-    label: env.TASK_RUNNER_DEVICE_LABEL || hostname2().replace(/\.local$/, ""),
-    platform: platform()
-  };
-  mkdirSync(dirname3(file), { recursive: true, mode: 448 });
-  writeFileSync(file, JSON.stringify(info));
-  return info;
-}
-function setDeviceLabel(label, env = process.env) {
-  const info = { ...deviceInfo(env), label: label.trim().slice(0, 60) };
-  writeFileSync(deviceFile(env), JSON.stringify(info));
-  return info;
-}
-function openRulesClient(db, options = {}) {
-  const remote = loadRemote(options.env);
-  return remote ? new RemoteRulesClient(remote, options.timeoutMs) : new LocalRulesClient(new RulesStore(db));
-}
-function readRulesCache(ctx, env = process.env) {
-  try {
-    const all = JSON.parse(readFileSync2(cacheFile(env), "utf8"));
-    return all[cacheKey(ctx)] ?? null;
-  } catch {
-    return null;
-  }
-}
-function writeRulesCache(ctx, text3, env = process.env) {
-  let all = {};
-  try {
-    all = JSON.parse(readFileSync2(cacheFile(env), "utf8"));
-  } catch {
-  }
-  all[cacheKey(ctx)] = { text: text3, at: Math.floor(Date.now() / 1e3) };
-  mkdirSync(dirname3(cacheFile(env)), { recursive: true, mode: 448 });
-  writeFileSync(cacheFile(env), JSON.stringify(all));
-}
-async function resolveForHook(client, ctx, env = process.env) {
-  try {
-    const resolved = await client.resolve(ctx);
-    if (client.mode === "remote") writeRulesCache(ctx, resolved.text, env);
-    return { text: resolved.text, pending: resolved.pending, stale: false };
-  } catch (error2) {
-    const cached2 = readRulesCache(ctx, env);
-    const reason = error2 instanceof Error ? error2.message : String(error2);
-    return cached2 ? { text: cached2.text, pending: 0, stale: true, error: reason } : { text: "", pending: 0, stale: false, error: reason };
-  }
-}
-var remoteFile, deviceFile, LocalRulesClient, RemoteRulesClient, cacheFile, cacheKey;
-var init_remote = __esm({
-  "src/node/remote.ts"() {
-    "use strict";
-    init_rules();
-    remoteFile = (env) => join3(homeDir(env), "remote.json");
-    deviceFile = (env) => join3(homeDir(env), "device.json");
-    LocalRulesClient = class {
-      mode = "local";
-      rules;
-      constructor(rules) {
-        this.rules = rules;
-      }
-      async resolve(context2) {
-        return { ...this.rules.resolve(context2), pending: this.rules.pendingCount() };
-      }
-      async listDocs() {
-        return this.rules.listDocs();
-      }
-      async setDoc(key, body) {
-        return this.rules.setDoc(key, body, "user");
-      }
-      async listProposals(status = "pending") {
-        return this.rules.listProposals(status);
-      }
-      async propose(input) {
-        return this.rules.propose(input);
-      }
-      async approve(id, text3) {
-        return this.rules.approve(id, text3);
-      }
-      async reject(id) {
-        return this.rules.reject(id);
-      }
-      async listDevices() {
-        return this.rules.listDevices();
-      }
-      async registerDevice(device) {
-        return this.rules.registerDevice(device);
-      }
-      async renameDevice(id, label) {
-        return this.rules.renameDevice(id, label);
-      }
-    };
-    RemoteRulesClient = class {
-      mode = "remote";
-      config;
-      timeoutMs;
-      constructor(config2, timeoutMs = 8e3) {
-        this.config = config2;
-        this.timeoutMs = timeoutMs;
-      }
-      async call(method, path, options = {}) {
-        const url = new URL(`${this.config.url}/api${path}`);
-        for (const [k, v] of Object.entries(options.query ?? {})) if (v) url.searchParams.set(k, v);
-        const response = await fetch(url, {
-          method,
-          headers: {
-            Authorization: `Bearer ${this.config.key}`,
-            ...options.body === void 0 ? {} : { "Content-Type": "application/json" }
-          },
-          body: options.body === void 0 ? void 0 : JSON.stringify(options.body),
-          signal: AbortSignal.timeout(this.timeoutMs)
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error ?? `Server answered ${response.status}`);
-        return data;
-      }
-      resolve(context2) {
-        return this.call("GET", "/rules/resolve", { query: { project: context2.project, org: context2.org, device: context2.device } });
-      }
-      async listDocs() {
-        return (await this.call("GET", "/rules/docs")).docs;
-      }
-      setDoc(key, body) {
-        return this.call("PUT", "/rules/docs", { body: { ...key, body } });
-      }
-      async listProposals(status = "pending") {
-        return (await this.call("GET", "/rules/proposals", { query: { status } })).proposals;
-      }
-      async propose(input) {
-        return (await this.call("POST", "/rules/proposals", { body: { ...input.key, mode: input.mode, text: input.text, reason: input.reason, author: input.author } })).proposal;
-      }
-      approve(id, text3) {
-        return this.call("POST", "/rules/proposals/approve", { body: { id, text: text3 } });
-      }
-      reject(id) {
-        return this.call("POST", "/rules/proposals/reject", { body: { id } });
-      }
-      async listDevices() {
-        return (await this.call("GET", "/devices")).devices;
-      }
-      registerDevice(device) {
-        return this.call("POST", "/devices", { body: device });
-      }
-      renameDevice(id, label) {
-        return this.call("PUT", "/devices", { body: { id, label } });
-      }
-    };
-    cacheFile = (env) => join3(homeDir(env), "rules-cache.json");
-    cacheKey = (ctx) => `${ctx.project ?? ""}|${ctx.org ?? ""}|${ctx.device ?? ""}`;
-  }
-});
-
-// src/core/markdown.ts
-function renderVault(data) {
-  const files = [];
-  const t = data.tables;
-  const live = (rows) => (rows ?? []).filter((r) => r.valid_until == null);
-  const entities = live(t.entities);
-  const facts = live(t.observations);
-  const relations = live(t.relations);
-  const fileOf = /* @__PURE__ */ new Map();
-  const used = /* @__PURE__ */ new Set();
-  for (const e of entities) {
-    let name = slug(String(e.name));
-    if (used.has(`${e.project_key}/${name}`)) name = `${name}-${e.entity_type}`;
-    used.add(`${e.project_key}/${name}`);
-    fileOf.set(String(e.id), name);
-  }
-  const byId = new Map(entities.map((e) => [String(e.id), e]));
-  const link = (id) => `[[${fileOf.get(id)}|${byId.get(id)?.name}]]`;
-  for (const e of entities) {
-    const id = String(e.id);
-    const out = relations.filter((r) => r.source_id === id && byId.has(String(r.target_id)));
-    const incoming = relations.filter((r) => r.target_id === id && byId.has(String(r.source_id)));
-    const lines = [
-      "---",
-      `type: ${e.entity_type}`,
-      `project: ${e.project_key}`,
-      `importance: ${e.importance}`,
-      `updated: ${day2(e.updated_at)}`,
-      `tags: [${e.entity_type}]`,
-      "---",
-      `# ${e.name}`,
-      ""
-    ];
-    if (e.summary) lines.push(String(e.summary), "");
-    const own = facts.filter((f) => f.entity_id === id);
-    if (own.length) lines.push("## Facts", ...own.map((f) => `- ${f.content}`), "");
-    if (out.length || incoming.length) {
-      lines.push(
-        "## Relations",
-        ...out.map((r) => `- ${r.relation_type} ${link(String(r.target_id))}${r.context ? ` \u2014 ${r.context}` : ""}`),
-        ...incoming.map((r) => `- ${link(String(r.source_id))} ${r.relation_type} this${r.context ? ` \u2014 ${r.context}` : ""}`),
-        ""
-      );
-    }
-    files.push({ path: `${e.project_key}/entities/${fileOf.get(id)}.md`, content: lines.join("\n") });
-  }
-  const projects = /* @__PURE__ */ new Set([
-    ...entities.map((e) => String(e.project_key)),
-    ...(t.entries ?? []).map((e) => String(e.project_key))
-  ]);
-  for (const project of projects) {
-    const index = [`# ${project}`, ""];
-    const mine = entities.filter((e) => e.project_key === project);
-    for (const type of [...new Set(mine.map((e) => String(e.entity_type)))].sort()) {
-      index.push(`## ${type}`, ...mine.filter((e) => e.entity_type === type).map((e) => `- ${link(String(e.id))}`), "");
-    }
-    files.push({ path: `${project}/README.md`, content: index.join("\n") });
-    const notes = (t.entries ?? []).filter((e) => e.project_key === project).sort((a, b) => Number(b.created_at) - Number(a.created_at));
-    if (notes.length) {
-      const lines = [`# Notes \u2014 ${project}`, ""];
-      for (const n of notes) {
-        lines.push(`## ${n.title}`, `*${n.type} \xB7 ${n.scope}${n.scope_ref ? `:${n.scope_ref}` : ""} \xB7 ${day2(n.created_at)}*`, "", String(n.content), "");
-      }
-      files.push({ path: `${project}/notes.md`, content: lines.join("\n") });
-    }
-  }
-  return files;
-}
-var slug, day2;
-var init_markdown = __esm({
-  "src/core/markdown.ts"() {
-    "use strict";
-    slug = (text3) => text3.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ı/g, "i").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80) || "untitled";
-    day2 = (seconds) => typeof seconds === "number" ? new Date(seconds * 1e3).toISOString().slice(0, 10) : "";
-  }
-});
-
 // src/core/fts.ts
 function fold(text3) {
   return text3.replace(/ı/g, "i").replace(/İ/g, "I");
@@ -23425,8 +22596,79 @@ var init_fts = __esm({
 });
 
 // src/core/schema.ts
+function moveLegacyAside(db) {
+  const entries = tableSql(db, "entries");
+  if (!entries || /\bseq\b/.test(entries) || tableSql(db, "legacy_entries")) return;
+  db.transaction(() => {
+    for (const t of db.all("SELECT name FROM sqlite_master WHERE type = 'trigger'")) {
+      db.exec(`DROP TRIGGER IF EXISTS "${t.name}"`);
+    }
+    db.exec("DROP TABLE IF EXISTS entries_fts; DROP TABLE IF EXISTS entities_fts;");
+    for (const table of LEGACY_TABLES) {
+      if (tableSql(db, table)) db.exec(`ALTER TABLE ${table} RENAME TO legacy_${table}`);
+    }
+    for (const i of db.all(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL AND tbl_name LIKE 'legacy\\_%' ESCAPE '\\'"
+    )) {
+      db.exec(`DROP INDEX IF EXISTS "${i.name}"`);
+    }
+    db.run("DELETE FROM schema_meta WHERE key = 'version'");
+  });
+}
+function copyLegacy(db) {
+  if (!tableSql(db, "legacy_entries")) return;
+  if (db.get("SELECT 1 FROM schema_meta WHERE key = 'legacy_copied'")) return;
+  const has3 = (table) => tableSql(db, `legacy_${table}`) !== null;
+  db.transaction(() => {
+    const now = "unixepoch()";
+    if (has3("projects")) {
+      db.run(`INSERT OR IGNORE INTO projects (key, project_path, project_name, created_at, updated_at)
+        SELECT key, project_path, project_name, COALESCE(created_at, ${now}), COALESCE(updated_at, created_at, ${now}) FROM legacy_projects`);
+    }
+    const owners = ["entries", "tasks", "entities"].filter(has3).map((t) => `SELECT project_key FROM legacy_${t}`).join(" UNION ");
+    if (owners) {
+      db.run(`INSERT OR IGNORE INTO projects (key, created_at, updated_at)
+        SELECT DISTINCT project_key, ${now}, ${now} FROM (${owners}) WHERE project_key IS NOT NULL`);
+    }
+    db.run(`INSERT OR IGNORE INTO project_paths (path, project_key, seen_at)
+      SELECT project_path, key, updated_at FROM projects WHERE project_path IS NOT NULL`);
+    if (has3("entries")) {
+      db.run(`INSERT OR IGNORE INTO entries (id, project_key, scope, scope_ref, type, title, content, tags, session_id, created_at)
+        SELECT id, project_key, COALESCE(scope, 'project'), scope_ref, type, title, content, tags, session_id, COALESCE(created_at, ${now})
+        FROM legacy_entries WHERE project_key IS NOT NULL ORDER BY created_at, rowid`);
+    }
+    if (has3("entities")) {
+      db.run(`INSERT OR IGNORE INTO entities (id, project_key, name, entity_type, summary, properties, importance, access_count,
+          last_accessed, created_at, updated_at, valid_until)
+        SELECT id, project_key, name, entity_type, summary, properties, COALESCE(importance, 0.5), COALESCE(access_count, 0),
+          COALESCE(last_accessed, updated_at, created_at, ${now}), COALESCE(created_at, ${now}), COALESCE(updated_at, created_at, ${now}), valid_until
+        FROM legacy_entities WHERE project_key IS NOT NULL ORDER BY created_at, rowid`);
+    }
+    if (has3("observations")) {
+      db.run(`INSERT OR IGNORE INTO observations (id, entity_id, content, source, confidence, created_at, valid_until, superseded_by)
+        SELECT id, entity_id, content, COALESCE(source, 'agent'), COALESCE(confidence, 1.0), COALESCE(created_at, valid_from, ${now}),
+          valid_until, superseded_by
+        FROM legacy_observations WHERE entity_id IN (SELECT id FROM entities) ORDER BY created_at, rowid`);
+    }
+    if (has3("relations")) {
+      db.run(`INSERT OR IGNORE INTO relations (id, source_id, target_id, relation_type, weight, context, created_at, valid_until)
+        SELECT id, source_id, target_id, relation_type, COALESCE(weight, 1.0), context, COALESCE(created_at, ${now}), valid_until
+        FROM legacy_relations WHERE source_id IN (SELECT id FROM entities) AND target_id IN (SELECT id FROM entities)`);
+    }
+    if (has3("tasks")) {
+      db.run(`INSERT OR IGNORE INTO tasks (project_key, task_group, id, index_num, title, content, status, result, error, system_prompt,
+          started_at, completed_at, execution_time_ms, result_size, created_at)
+        SELECT project_key, task_group, id, index_num, title, content, COALESCE(status, 'pending'), result, error, system_prompt,
+          started_at, completed_at, execution_time_ms, result_size, COALESCE(created_at, ${now})
+        FROM legacy_tasks WHERE project_key IS NOT NULL`);
+    }
+    db.run("INSERT INTO schema_meta (key, value) VALUES ('legacy_copied', CAST(unixepoch() AS TEXT))");
+    db.run("INSERT INTO schema_meta (key, value) VALUES ('reindex', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  });
+}
 function migrate(db) {
   db.exec("CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  moveLegacyAside(db);
   const row = db.get("SELECT value FROM schema_meta WHERE key = 'version'");
   const current = row ? Number(row.value) : 0;
   if (current > SCHEMA_VERSION) {
@@ -23443,8 +22685,9 @@ function migrate(db) {
       );
     });
   }
+  copyLegacy(db);
 }
-var FTS_TOKENIZER, FTS_TOKENIZER_V4, migrations, SCHEMA_VERSION;
+var FTS_TOKENIZER, FTS_TOKENIZER_V4, migrations, SCHEMA_VERSION, LEGACY_TABLES, tableSql;
 var init_schema = __esm({
   "src/core/schema.ts"() {
     "use strict";
@@ -23634,6 +22877,8 @@ var init_schema = __esm({
       }
     ];
     SCHEMA_VERSION = migrations.length;
+    LEGACY_TABLES = ["projects", "entries", "tasks", "entities", "observations", "relations"];
+    tableSql = (db, name) => db.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", name)?.sql ?? null;
   }
 });
 
@@ -23774,6 +23019,10 @@ var init_store = __esm({
           path
         );
         return row?.key ?? null;
+      }
+      /** Every folder a project was seen in: lets a scan resolve thousands of folders without a call per folder. */
+      projectPaths() {
+        return this.db.all("SELECT path, project_key FROM project_paths");
       }
       findProjectByPathPrefix(prefix) {
         const escaped = prefix.replace(/[\\%_]/g, "\\$&");
@@ -24288,9 +23537,10 @@ var init_store = __esm({
         const related = /* @__PURE__ */ new Map();
         for (const anchor of anchors) {
           for (const n of this.db.all(
-            `SELECT e.id, e.name, e.entity_type, e.project_key, r.relation_type, r.weight
+            `SELECT e.id, e.name, e.entity_type, e.project_key, r.relation_type, r.weight, r.source_id = ? AS outgoing
          FROM relations r JOIN entities e ON e.id = CASE WHEN r.source_id = ? THEN r.target_id ELSE r.source_id END
          WHERE (r.source_id = ? OR r.target_id = ?) AND r.valid_until IS NULL AND e.valid_until IS NULL`,
+            anchor.id,
             anchor.id,
             anchor.id,
             anchor.id
@@ -24298,7 +23548,7 @@ var init_store = __esm({
             const inList = byId.get(n.id);
             if (inList && inList !== anchor) inList.score += 0.08 * Math.min(1, n.weight);
             else if (!inList && (input.all_projects || n.project_key === input.project || n.project_key === GLOBAL_PROJECT)) {
-              if (!related.has(n.id)) related.set(n.id, { name: n.name, entity_type: n.entity_type, relation: n.relation_type, via: anchor.name });
+              if (!related.has(n.id)) related.set(n.id, { name: n.name, entity_type: n.entity_type, relation: n.relation_type, via: anchor.name, outgoing: Boolean(n.outgoing) });
             }
           }
         }
@@ -24440,6 +23690,22 @@ var init_store = __esm({
         const group = this.latestGroup(project, limits.branch);
         const tasks = group ? this.taskSummary(project, group) : null;
         return { entities, global_entities: globalEntities, entries, tasks, stats: this.graphStats(project) };
+      }
+      /** Everything the live panel shows, in one call. */
+      snapshot(input) {
+        const project = required2(input.project, "project");
+        const group = this.latestGroup(project, input.branch ?? null);
+        const graph = this.graphAll(project);
+        return {
+          project,
+          branch: input.branch ?? null,
+          stats: this.graphStats(project),
+          tasks: group ? { summary: this.taskSummary(project, group), items: this.taskStatus({ project, task_group: group }).tasks } : null,
+          notes: this.getContext({ project, all: true, limit: 8 }).entries,
+          entities: graph.entities.slice(0, 40),
+          relations: graph.relations.length,
+          search: input.query ? this.recall({ project, q: input.query, limit: 8 }) : void 0
+        };
       }
       // ─── Tasks ─────────────────────────────────────────────
       createTasks(input) {
@@ -24644,6 +23910,19 @@ var init_store = __esm({
         return { cleared: before?.n ?? 0, task_group: input.task_group ?? null };
       }
       // ─── Worklog ───────────────────────────────────────────
+      worklogFileStates(paths) {
+        const out = {};
+        for (let i = 0; i < paths.length; i += 400) {
+          const chunk = paths.slice(i, i + 400);
+          for (const row of this.db.all(
+            `SELECT path, size, mtime FROM worklog_files WHERE path IN (${chunk.map(() => "?").join(", ")})`,
+            ...chunk
+          )) {
+            out[row.path] = { size: row.size, mtime: row.mtime };
+          }
+        }
+        return out;
+      }
       worklogFileState(path) {
         return this.db.get("SELECT size, mtime FROM worklog_files WHERE path = ?", path) ?? null;
       }
@@ -24657,11 +23936,25 @@ var init_store = __esm({
           value
         );
       }
-      clearWorklog() {
+      /** Drops the time rows of every transcript, or only of those whose key starts with `prefix`. */
+      clearWorklog(prefix) {
+        const where = prefix === void 0 ? "" : " WHERE substr(%c, 1, ?) = ?";
+        const args = prefix === void 0 ? [] : [prefix.length, prefix];
         this.db.transaction(() => {
-          this.db.run("DELETE FROM worklog_minutes");
-          this.db.run("DELETE FROM worklog_facts");
-          this.db.run("DELETE FROM worklog_files");
+          this.db.run(`DELETE FROM worklog_minutes${where.replace("%c", "file")}`, ...args);
+          this.db.run(`DELETE FROM worklog_facts${where.replace("%c", "file")}`, ...args);
+          this.db.run(`DELETE FROM worklog_files${where.replace("%c", "path")}`, ...args);
+        });
+      }
+      dropWorklogFiles(paths) {
+        this.db.transaction(() => {
+          for (let i = 0; i < paths.length; i += 400) {
+            const chunk = paths.slice(i, i + 400);
+            const list = chunk.map(() => "?").join(", ");
+            this.db.run(`DELETE FROM worklog_minutes WHERE file IN (${list})`, ...chunk);
+            this.db.run(`DELETE FROM worklog_facts WHERE file IN (${list})`, ...chunk);
+            this.db.run(`DELETE FROM worklog_files WHERE path IN (${list})`, ...chunk);
+          }
         });
       }
       replaceWorklogFile(path, size, mtime, minutes, facts) {
@@ -25045,16 +24338,200 @@ var init_store = __esm({
   }
 });
 
+// src/node/remote.ts
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir, hostname as hostname2, platform } from "node:os";
+import { dirname, join } from "node:path";
+function homeDir(env = process.env) {
+  return env.TASK_RUNNER_HOME || join(homedir(), ".task-runner");
+}
+function loadRemote(env = process.env) {
+  if (env.TASK_RUNNER_REMOTE_URL && env.TASK_RUNNER_REMOTE_KEY) {
+    return { url: env.TASK_RUNNER_REMOTE_URL.replace(/\/+$/, ""), key: env.TASK_RUNNER_REMOTE_KEY };
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(remoteFile(env), "utf8"));
+    return parsed.url && parsed.key ? { url: parsed.url.replace(/\/+$/, ""), key: parsed.key } : null;
+  } catch {
+    return null;
+  }
+}
+function saveRemote(config2, env = process.env) {
+  const file = remoteFile(env);
+  mkdirSync(dirname(file), { recursive: true, mode: 448 });
+  writeFileSync(file, JSON.stringify(config2), { mode: 384 });
+  chmodSync(file, 384);
+}
+function clearRemote(env = process.env) {
+  const file = remoteFile(env);
+  if (!existsSync(file)) return false;
+  unlinkSync(file);
+  return true;
+}
+function deviceInfo(env = process.env) {
+  const file = deviceFile(env);
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    if (parsed.id && parsed.label) return { id: parsed.id, label: parsed.label, platform: parsed.platform ?? platform() };
+  } catch {
+  }
+  const info = {
+    id: `dev-${crypto.randomUUID().slice(0, 8)}`,
+    label: env.TASK_RUNNER_DEVICE_LABEL || hostname2().replace(/\.local$/, ""),
+    platform: platform()
+  };
+  mkdirSync(dirname(file), { recursive: true, mode: 448 });
+  writeFileSync(file, JSON.stringify(info));
+  return info;
+}
+function setDeviceLabel(label, env = process.env) {
+  const info = { ...deviceInfo(env), label: label.trim().slice(0, 60) };
+  writeFileSync(deviceFile(env), JSON.stringify(info));
+  return info;
+}
+function readRulesCache(ctx, env = process.env) {
+  try {
+    const all = JSON.parse(readFileSync(cacheFile(env), "utf8"));
+    return all[cacheKey(ctx)] ?? null;
+  } catch {
+    return null;
+  }
+}
+function writeRulesCache(ctx, text3, env = process.env) {
+  let all = {};
+  try {
+    all = JSON.parse(readFileSync(cacheFile(env), "utf8"));
+  } catch {
+  }
+  all[cacheKey(ctx)] = { text: text3, at: Math.floor(Date.now() / 1e3) };
+  mkdirSync(dirname(cacheFile(env)), { recursive: true, mode: 448 });
+  writeFileSync(cacheFile(env), JSON.stringify(all));
+}
+async function resolveForHook(client, ctx, env = process.env) {
+  try {
+    const resolved = await client.resolve(ctx);
+    if (client.mode === "remote") writeRulesCache(ctx, resolved.text, env);
+    return { text: resolved.text, pending: resolved.pending, stale: false };
+  } catch (error2) {
+    const cached2 = readRulesCache(ctx, env);
+    const reason = error2 instanceof Error ? error2.message : String(error2);
+    return cached2 ? { text: cached2.text, pending: 0, stale: true, error: reason } : { text: "", pending: 0, stale: false, error: reason };
+  }
+}
+var remoteFile, deviceFile, LocalRulesClient, RemoteRulesClient, cacheFile, cacheKey;
+var init_remote = __esm({
+  "src/node/remote.ts"() {
+    "use strict";
+    init_rules();
+    remoteFile = (env) => join(homeDir(env), "remote.json");
+    deviceFile = (env) => join(homeDir(env), "device.json");
+    LocalRulesClient = class {
+      mode = "local";
+      rules;
+      constructor(rules) {
+        this.rules = rules;
+      }
+      async resolve(context2) {
+        return { ...this.rules.resolve(context2), pending: this.rules.pendingCount() };
+      }
+      async listDocs() {
+        return this.rules.listDocs();
+      }
+      async setDoc(key, body) {
+        return this.rules.setDoc(key, body, "user");
+      }
+      async listProposals(status = "pending") {
+        return this.rules.listProposals(status);
+      }
+      async propose(input) {
+        return this.rules.propose(input);
+      }
+      async approve(id, text3) {
+        return this.rules.approve(id, text3);
+      }
+      async reject(id) {
+        return this.rules.reject(id);
+      }
+      async listDevices() {
+        return this.rules.listDevices();
+      }
+      async registerDevice(device) {
+        return this.rules.registerDevice(device);
+      }
+      async renameDevice(id, label) {
+        return this.rules.renameDevice(id, label);
+      }
+    };
+    RemoteRulesClient = class {
+      mode = "remote";
+      config;
+      timeoutMs;
+      constructor(config2, timeoutMs = 8e3) {
+        this.config = config2;
+        this.timeoutMs = timeoutMs;
+      }
+      async call(method, path, options = {}) {
+        const url = new URL(`${this.config.url}/api${path}`);
+        for (const [k, v] of Object.entries(options.query ?? {})) if (v) url.searchParams.set(k, v);
+        const response = await fetch(url, {
+          method,
+          headers: {
+            Authorization: `Bearer ${this.config.key}`,
+            ...options.body === void 0 ? {} : { "Content-Type": "application/json" }
+          },
+          body: options.body === void 0 ? void 0 : JSON.stringify(options.body),
+          signal: AbortSignal.timeout(this.timeoutMs)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error ?? `Server answered ${response.status}`);
+        return data;
+      }
+      resolve(context2) {
+        return this.call("GET", "/rules/resolve", { query: { project: context2.project, org: context2.org, device: context2.device } });
+      }
+      async listDocs() {
+        return (await this.call("GET", "/rules/docs")).docs;
+      }
+      setDoc(key, body) {
+        return this.call("PUT", "/rules/docs", { body: { ...key, body } });
+      }
+      async listProposals(status = "pending") {
+        return (await this.call("GET", "/rules/proposals", { query: { status } })).proposals;
+      }
+      async propose(input) {
+        return (await this.call("POST", "/rules/proposals", { body: { ...input.key, mode: input.mode, text: input.text, reason: input.reason, author: input.author } })).proposal;
+      }
+      approve(id, text3) {
+        return this.call("POST", "/rules/proposals/approve", { body: { id, text: text3 } });
+      }
+      reject(id) {
+        return this.call("POST", "/rules/proposals/reject", { body: { id } });
+      }
+      async listDevices() {
+        return (await this.call("GET", "/devices")).devices;
+      }
+      registerDevice(device) {
+        return this.call("POST", "/devices", { body: device });
+      }
+      renameDevice(id, label) {
+        return this.call("PUT", "/devices", { body: { id, label } });
+      }
+    };
+    cacheFile = (env) => join(homeDir(env), "rules-cache.json");
+    cacheKey = (ctx) => `${ctx.project ?? ""}|${ctx.org ?? ""}|${ctx.device ?? ""}`;
+  }
+});
+
 // src/node/sqlite.ts
 import { mkdirSync as mkdirSync2 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { dirname as dirname4, join as join4 } from "node:path";
+import { homedir as homedir2 } from "node:os";
+import { dirname as dirname2, join as join2 } from "node:path";
 function defaultDbPath(env = process.env) {
   if (env.TASK_RUNNER_DB) return env.TASK_RUNNER_DB;
-  return join4(env.TASK_RUNNER_HOME || join4(homedir3(), ".task-runner"), "memory.db");
+  return join2(env.TASK_RUNNER_HOME || join2(homedir2(), ".task-runner"), "memory.db");
 }
 function openDb(path) {
-  if (path !== ":memory:") mkdirSync2(dirname4(path), { recursive: true, mode: 448 });
+  if (path !== ":memory:") mkdirSync2(dirname2(path), { recursive: true, mode: 448 });
   const { DatabaseSync } = process.getBuiltinModule("node:sqlite");
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL;");
@@ -25109,6 +24586,759 @@ var init_sqlite = __esm({
   }
 });
 
+// src/node/backend.ts
+function remoteStore(config2, timeoutMs = 2e4) {
+  const call = async (method, args) => {
+    const response = await fetch(`${config2.url}/api/rpc`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${config2.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ target: "store", method, args }),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    const data = await response.json().catch(() => ({ error: `Server answered ${response.status}`, code: "internal" }));
+    if ("error" in data) {
+      const code = ["invalid", "not_found", "conflict"].includes(data.code) ? data.code : null;
+      throw code ? new StoreError(code, data.error) : new Error(data.error);
+    }
+    return data.result;
+  };
+  return new Proxy({}, {
+    // "then" stays undefined so the proxy is never mistaken for a promise.
+    get: (_, method) => typeof method === "string" && method !== "then" ? (...args) => call(method, args) : void 0
+  });
+}
+function openBackend(options = {}) {
+  const env = options.env ?? process.env;
+  const db = openDb(defaultDbPath(env));
+  const remote = loadRemote(env);
+  if (remote) {
+    return {
+      mode: "remote",
+      store: remoteStore(remote, options.timeoutMs),
+      rules: new RemoteRulesClient(remote, options.timeoutMs),
+      location: `server ${remote.url}`,
+      db,
+      local: null,
+      close: () => db.close()
+    };
+  }
+  const store = new Store(db);
+  return {
+    mode: "local",
+    store,
+    rules: new LocalRulesClient(new RulesStore(db)),
+    location: defaultDbPath(env),
+    db,
+    local: store,
+    close: () => db.close()
+  };
+}
+var init_backend = __esm({
+  "src/node/backend.ts"() {
+    "use strict";
+    init_errors4();
+    init_rules();
+    init_store();
+    init_remote();
+    init_sqlite();
+  }
+});
+
+// src/worklog/compute.ts
+function localDay(epochSeconds) {
+  const d = new Date(epochSeconds * 1e3);
+  const pad2 = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function normalizeBranch(branch) {
+  return branch && branch !== "HEAD" ? branch : NO_BRANCH;
+}
+function computeWorklog(events, resolvers, options = DEFAULT_OPTIONS) {
+  const sorted = [...events].sort((a, b) => a.t - b.t);
+  const minutes = /* @__PURE__ */ new Map();
+  const facts = /* @__PURE__ */ new Map();
+  const focusAt = [];
+  let focus = null;
+  for (const e of sorted) {
+    for (const file of e.paths ?? []) focus = resolvers.path(file) ?? focus;
+    focusAt.push(focus);
+  }
+  const firstFocus = focusAt.find((f) => f !== null) ?? null;
+  const index = new Map(sorted.map((e, i) => [e, i]));
+  const scopeOf2 = (e) => {
+    const here = resolvers.cwd(e.cwd);
+    if (here.isRepo) return { project: here.project, branch: normalizeBranch(e.branch) };
+    const followed = focusAt[index.get(e) ?? 0] ?? firstFocus;
+    return { project: followed ?? here.project, branch: followed ? NO_BRANCH : normalizeBranch(e.branch) };
+  };
+  const addSeconds = (end, seconds, kind, scope, sessionId) => {
+    let from = end - seconds;
+    while (from < end - 0.5) {
+      const minute = Math.floor(from / 60);
+      const next = Math.min(end, (minute + 1) * 60);
+      const secs = Math.round(next - from);
+      if (secs > 0) {
+        const key = `${minute}|${kind}|${scope.project}|${scope.branch}`;
+        const row = minutes.get(key);
+        if (row) row.secs += secs;
+        else minutes.set(key, { sessionId, minute, kind, ...scope, secs });
+      }
+      from = next;
+    }
+  };
+  const fact2 = (e) => {
+    const scope = scopeOf2(e);
+    const day4 = localDay(e.t);
+    const key = `${day4}|${scope.project}|${scope.branch}`;
+    let row = facts.get(key);
+    if (!row) {
+      row = { day: day4, ...scope, prompts: 0, edits: 0, firstPrompt: null };
+      facts.set(key, row);
+    }
+    return row;
+  };
+  for (let i = 0; i < sorted.length; i++) {
+    const current = sorted[i];
+    if (current.kind === "prompt") {
+      const row = fact2(current);
+      row.prompts += 1;
+      if (!row.firstPrompt && current.text) row.firstPrompt = current.text;
+    }
+    if (current.edits) fact2(current).edits += current.edits;
+    if (i === 0) continue;
+    const previous = sorted[i - 1];
+    const gap = current.t - previous.t;
+    if (gap <= 0) continue;
+    if (current.kind === "system") continue;
+    if (current.kind === "prompt") {
+      addSeconds(current.t, Math.min(gap, options.humanCapSeconds), "human", scopeOf2(previous), current.sessionId);
+    } else {
+      addSeconds(current.t, Math.min(gap, options.aiCapSeconds), "ai", scopeOf2(current), current.sessionId);
+    }
+  }
+  return { minutes: [...minutes.values()], facts: [...facts.values()] };
+}
+function taskInfo(branch) {
+  if (branch === NO_BRANCH || branch === "main" || branch === "master" || branch === "develop") {
+    return { label: branch === NO_BRANCH ? "(no branch)" : branch, kind: "other" };
+  }
+  const ticket = TICKET.exec(branch)?.[1];
+  const head = branch.split("/")[0].toLowerCase();
+  const kind = /^(feat|feature)$/.test(head) ? "feature" : /^(fix|bugfix|hotfix)$/.test(head) ? "fix" : /^(chore|refactor|docs|test|ci|build|perf|style)$/.test(head) ? "chore" : "other";
+  return { label: ticket ? ticket.toUpperCase() : branch, kind };
+}
+var DEFAULT_OPTIONS, NO_BRANCH, TICKET;
+var init_compute = __esm({
+  "src/worklog/compute.ts"() {
+    "use strict";
+    DEFAULT_OPTIONS = { humanCapSeconds: 5 * 60, aiCapSeconds: 15 * 60 };
+    NO_BRANCH = "(none)";
+    TICKET = /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]*-\d+)(?:[^A-Za-z0-9]|$)/;
+  }
+});
+
+// src/worklog/report.ts
+function startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function parseDay(text3) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text3);
+  if (!m) throw new Error(`Invalid date '${text3}'. Use YYYY-MM-DD.`);
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+function resolveRange(flags, now = /* @__PURE__ */ new Date()) {
+  const today = startOfDay(now);
+  const secs = (d) => Math.floor(d.getTime() / 1e3);
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  if (flags.from || flags.to) {
+    const from = flags.from ? parseDay(flags.from) : /* @__PURE__ */ new Date(0);
+    const to = addDays(flags.to ? parseDay(flags.to) : today, 1);
+    return { from: secs(from), to: secs(to), label: `${flags.from ?? "start"} to ${flags.to ?? iso(today)}` };
+  }
+  if (flags.today) return { from: secs(today), to: secs(addDays(today, 1)), label: `Today ${iso(today)}` };
+  if (flags.yesterday) {
+    const y = addDays(today, -1);
+    return { from: secs(y), to: secs(today), label: `Yesterday ${iso(y)}` };
+  }
+  if (flags.days) {
+    const from = addDays(today, -(flags.days - 1));
+    return { from: secs(from), to: secs(addDays(today, 1)), label: `Last ${flags.days} days` };
+  }
+  if (flags.month) {
+    const first = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { from: secs(first), to: secs(new Date(today.getFullYear(), today.getMonth() + 1, 1)), label: `Month ${iso(first).slice(0, 7)}` };
+  }
+  const monday = addDays(today, -((today.getDay() + 6) % 7));
+  const start = flags.lastWeek ? addDays(monday, -7) : monday;
+  const end = addDays(start, 7);
+  return { from: secs(start), to: secs(end), label: `${flags.lastWeek ? "Last week" : "Week"} ${iso(start)} to ${iso(addDays(end, -1))}` };
+}
+async function buildReport(store, input) {
+  const { perDay, facts, wall_s } = await store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
+  const byTask = /* @__PURE__ */ new Map();
+  const rowFor = (project, branch) => {
+    const info = taskInfo(branch);
+    const key = `${project}\0${info.label}`;
+    let row = byTask.get(key);
+    if (!row) {
+      row = { ...info, project, branches: [], you_s: 0, agent_s: 0, wall_s: 0, prompts: 0, edits: 0, days: [], first_prompt: null };
+      byTask.set(key, row);
+    }
+    if (!row.branches.includes(branch)) row.branches.push(branch);
+    return row;
+  };
+  const days = /* @__PURE__ */ new Map();
+  for (const r of perDay) {
+    const row = rowFor(r.project_key, r.branch);
+    row.you_s += r.human_s;
+    row.agent_s += r.ai_s;
+    row.wall_s += r.wall_s;
+    if (!row.days.includes(r.day)) row.days.push(r.day);
+    const d = days.get(r.day) ?? { day: r.day, you_s: 0, agent_s: 0, wall_s: 0 };
+    d.you_s += r.human_s;
+    d.agent_s += r.ai_s;
+    d.wall_s += r.wall_s;
+    days.set(r.day, d);
+  }
+  for (const f of facts) {
+    const row = rowFor(f.project_key, f.branch);
+    row.prompts += f.prompts;
+    row.edits += f.edits;
+    if (!row.first_prompt && f.first_prompt) row.first_prompt = f.first_prompt;
+  }
+  const rows = [...byTask.values()].filter((r) => r.you_s + r.agent_s > 0 || r.prompts > 0).sort((a, b) => b.you_s + b.agent_s - (a.you_s + a.agent_s));
+  if (input.detail) {
+    for (const row of rows.slice(0, input.detailLimit ?? 15)) {
+      const notes = [];
+      const groups = [];
+      for (const branch of row.branches) {
+        const found = await store.worklogActivity(row.project, branch, input.range.from, input.range.to);
+        for (const n of found.notes) notes.push({ type: n.type, title: n.title, at: new Date(n.created_at * 1e3).toISOString().slice(0, 10) });
+        for (const g of found.groups) groups.push({ name: g.task_group, done: g.completed, total: g.total });
+      }
+      row.notes = notes;
+      row.task_groups = groups;
+    }
+  }
+  return {
+    range: input.range,
+    rows,
+    days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)),
+    totals: {
+      you_s: rows.reduce((n, r) => n + r.you_s, 0),
+      agent_s: rows.reduce((n, r) => n + r.agent_s, 0),
+      wall_s,
+      projects: new Set(rows.map((r) => r.project)).size,
+      tasks: rows.length,
+      prompts: rows.reduce((n, r) => n + r.prompts, 0),
+      edits: rows.reduce((n, r) => n + r.edits, 0)
+    }
+  };
+}
+function formatDuration(seconds) {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 1) return seconds > 0 ? "<1m" : "0m";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
+}
+function renderText(report, options = {}) {
+  const { totals: t } = report;
+  const lines = [
+    report.range.label,
+    `You ${formatDuration(t.you_s)} \xB7 agent ${formatDuration(t.agent_s)} \xB7 wall clock ${formatDuration(t.wall_s)} \xB7 ${t.tasks} tasks in ${t.projects} projects`,
+    "(agent time adds up across parallel sessions; wall clock counts each minute once)",
+    ""
+  ];
+  if (report.rows.length === 0) return [...lines, "No activity in this range."].join("\n");
+  lines.push(`${pad("PROJECT", 24)} ${pad("TASK", 26)} ${pad("KIND", 8)} ${pad("YOU", 8, true)} ${pad("AGENT", 8, true)} ${pad("WALL", 8, true)} ${pad("PROMPTS", 7, true)} ${pad("EDITS", 5, true)}`);
+  for (const r of report.rows) {
+    lines.push(
+      `${pad(r.project, 24)} ${pad(r.label, 26)} ${pad(r.kind, 8)} ${pad(formatDuration(r.you_s), 8, true)} ${pad(formatDuration(r.agent_s), 8, true)} ${pad(formatDuration(r.wall_s), 8, true)} ${pad(String(r.prompts), 7, true)} ${pad(String(r.edits), 5, true)}`
+    );
+    if (options.detail) {
+      if (r.first_prompt) lines.push(`    asked: ${r.first_prompt}`);
+      for (const g of r.task_groups ?? []) lines.push(`    tasks: ${g.name} ${g.done}/${g.total}`);
+      for (const n of r.notes ?? []) lines.push(`    ${n.at} [${n.type}] ${n.title}`);
+    }
+  }
+  return lines.join("\n");
+}
+function renderMarkdown(report) {
+  const { totals: t } = report;
+  const out = [
+    `# Worklog: ${report.range.label}`,
+    "",
+    `- You: **${formatDuration(t.you_s)}**`,
+    `- Agent: **${formatDuration(t.agent_s)}** (adds up across parallel sessions)`,
+    `- Wall clock: **${formatDuration(t.wall_s)}**`,
+    `- ${t.tasks} tasks in ${t.projects} projects, ${t.prompts} prompts, ${t.edits} file edits`,
+    ""
+  ];
+  const projects = [...new Set(report.rows.map((r) => r.project))];
+  for (const project of projects) {
+    const rows = report.rows.filter((r) => r.project === project);
+    out.push(`## ${project}`, "");
+    for (const r of rows) {
+      out.push(`### ${r.label} (${r.kind})`, "", `You ${formatDuration(r.you_s)} \xB7 agent ${formatDuration(r.agent_s)} \xB7 wall ${formatDuration(r.wall_s)} \xB7 ${r.days.join(", ")}`, "");
+      if (r.first_prompt) out.push(`Started from: "${r.first_prompt}"`, "");
+      for (const g of r.task_groups ?? []) out.push(`- Task group \`${g.name}\`: ${g.done}/${g.total} done`);
+      for (const n of r.notes ?? []) out.push(`- ${n.at} [${n.type}] ${n.title}`);
+      if ((r.notes?.length ?? 0) + (r.task_groups?.length ?? 0) > 0) out.push("");
+    }
+  }
+  return out.join("\n");
+}
+async function renderCsv(store, input) {
+  const { perDay } = await store.worklogRows({ from: input.range.from, to: input.range.to, project: input.project, exclude: input.exclude });
+  const lines = ["day,project,task,kind,branch,you_minutes,agent_minutes,wall_minutes,you_hours,agent_hours"];
+  for (const r of perDay) {
+    const info = taskInfo(r.branch);
+    const hours = (s) => (s / 3600).toFixed(2);
+    lines.push(
+      [r.day, r.project_key, info.label, info.kind, r.branch, Math.round(r.human_s / 60), Math.round(r.ai_s / 60), Math.round(r.wall_s / 60), hours(r.human_s), hours(r.ai_s)].map(csvCell).join(",")
+    );
+  }
+  return lines.join("\n");
+}
+function summarizeReport(report) {
+  return {
+    period: report.range.label,
+    totals: {
+      you: formatDuration(report.totals.you_s),
+      agent: formatDuration(report.totals.agent_s),
+      wall: formatDuration(report.totals.wall_s),
+      tasks: report.totals.tasks,
+      projects: report.totals.projects
+    },
+    by_day: report.days.map((d) => ({ day: d.day, you: formatDuration(d.you_s), agent: formatDuration(d.agent_s), wall: formatDuration(d.wall_s) })),
+    tasks: report.rows.slice(0, 20).map((r) => ({
+      project: r.project,
+      task: r.label,
+      kind: r.kind,
+      you: formatDuration(r.you_s),
+      agent: formatDuration(r.agent_s),
+      wall: formatDuration(r.wall_s),
+      days: r.days,
+      prompts: r.prompts,
+      file_edits: r.edits,
+      started_from: r.first_prompt ?? void 0,
+      task_groups: r.task_groups?.map((g) => `${g.name} ${g.done}/${g.total}`),
+      notes: r.notes?.slice(0, 6).map((n) => `${n.at} [${n.type}] ${n.title}`)
+    })),
+    more_tasks: Math.max(0, report.rows.length - 20) || void 0
+  };
+}
+var iso, pad, csvCell;
+var init_report = __esm({
+  "src/worklog/report.ts"() {
+    "use strict";
+    init_compute();
+    iso = (d) => {
+      const pad2 = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    };
+    pad = (text3, width, right = false) => right ? text3.padStart(width) : text3.length > width ? `${text3.slice(0, width - 1)}\u2026` : text3.padEnd(width);
+    csvCell = (value) => {
+      const text3 = String(value ?? "");
+      return /[",\n]/.test(text3) ? `"${text3.replace(/"/g, '""')}"` : text3;
+    };
+  }
+});
+
+// src/node/project.ts
+import { execFileSync } from "node:child_process";
+import { readFileSync as readFileSync2, realpathSync } from "node:fs";
+import { basename, dirname as dirname3, join as join3 } from "node:path";
+function git(cwd, ...args) {
+  try {
+    const out = execFileSync("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      timeout: 2e3,
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+function keyFromRemote(url) {
+  const parts = url.trim().replace(/\.git$/, "").split(/[/:]+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`.toLowerCase();
+}
+function ownerFromRemote(url) {
+  const parts = url.trim().replace(/\.git$/, "").split(/[/:]+/).filter(Boolean);
+  return parts.length >= 2 ? parts[parts.length - 2].toLowerCase() : null;
+}
+function pinned(root) {
+  try {
+    const parsed = JSON.parse(readFileSync2(join3(root, ".task-runner.json"), "utf8"));
+    const pick2 = (v) => typeof v === "string" && v.trim() ? v.trim() : null;
+    return { project: pick2(parsed.project), org: pick2(parsed.org) };
+  } catch {
+    return { project: null, org: null };
+  }
+}
+function detectProject(cwd, lookupByPath, env = process.env) {
+  let real = cwd;
+  try {
+    real = realpathSync(cwd);
+  } catch {
+  }
+  const top = git(real, "rev-parse", "--show-toplevel");
+  const root = top ?? real;
+  const branch = git(real, "branch", "--show-current");
+  const remote = git(real, "remote", "get-url", "origin");
+  const common = git(real, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  const mainRoot = common && basename(common) === ".git" ? dirname3(common) : root;
+  const pin = pinned(root);
+  const project = env.TASK_RUNNER_PROJECT || pin.project || lookupByPath?.(root) || (mainRoot !== root ? lookupByPath?.(mainRoot) : null) || (remote ? keyFromRemote(remote) : null) || basename(root);
+  const org = env.TASK_RUNNER_ORG || pin.org || (remote ? ownerFromRemote(remote) : null);
+  return { project, project_path: root, branch, org, is_repo: top !== null };
+}
+async function resolveProject(cwd, lookupByPath, env = process.env) {
+  const asked = [];
+  detectProject(cwd, (p) => {
+    asked.push(p);
+    return null;
+  }, env);
+  const answers = /* @__PURE__ */ new Map();
+  for (const p of asked) answers.set(p, await lookupByPath(p));
+  return detectProject(cwd, (p) => answers.get(p) ?? null, env);
+}
+var init_project = __esm({
+  "src/node/project.ts"() {
+    "use strict";
+  }
+});
+
+// src/worklog/scan.ts
+import { createReadStream, existsSync as existsSync2, readdirSync, statSync } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { basename as basename2, dirname as dirname4, join as join4 } from "node:path";
+function transcriptRoot(env = process.env) {
+  return join4(env.CLAUDE_CONFIG_DIR || join4(homedir3(), ".claude"), "projects");
+}
+function listTranscripts(root, sinceDays) {
+  const cutoff = sinceDays === null ? 0 : Date.now() / 1e3 - sinceDays * 86400;
+  const out = [];
+  let dirs = [];
+  try {
+    dirs = readdirSync(root);
+  } catch {
+    return out;
+  }
+  for (const dir of dirs) {
+    let names = [];
+    try {
+      names = readdirSync(join4(root, dir));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.endsWith(".jsonl")) continue;
+      const path = join4(root, dir, name);
+      try {
+        const st = statSync(path);
+        if (!st.isFile() || st.mtimeMs / 1e3 < cutoff) continue;
+        out.push({ path, size: st.size, mtime: Math.floor(st.mtimeMs / 1e3) });
+      } catch {
+      }
+    }
+  }
+  return out;
+}
+function parseToolResult(line2) {
+  if (line2.includes('"isSidechain":true')) return null;
+  const stamp = field(line2, "timestamp");
+  const t = stamp ? Date.parse(stamp) / 1e3 : NaN;
+  if (!Number.isFinite(t)) return null;
+  return { t, kind: "tool_result", cwd: field(line2, "cwd"), branch: field(line2, "gitBranch"), sessionId: field(line2, "sessionId") ?? "unknown" };
+}
+function parseLine(line2) {
+  if (line2.includes('"type":"tool_result"') && line2.includes('"type":"user"')) return parseToolResult(line2);
+  if (!line2.includes('"type":"user"') && !line2.includes('"type":"assistant"')) return null;
+  let d;
+  try {
+    d = JSON.parse(line2);
+  } catch {
+    return null;
+  }
+  if (d.isSidechain || d.type !== "user" && d.type !== "assistant" || typeof d.timestamp !== "string") return null;
+  const t = Date.parse(d.timestamp) / 1e3;
+  if (!Number.isFinite(t)) return null;
+  const base = {
+    t,
+    cwd: typeof d.cwd === "string" ? d.cwd : null,
+    branch: typeof d.gitBranch === "string" ? d.gitBranch : null,
+    sessionId: typeof d.sessionId === "string" ? d.sessionId : "unknown"
+  };
+  const content = d.message?.content;
+  if (d.type === "assistant") {
+    const uses = Array.isArray(content) ? content.filter((c) => c?.type === "tool_use") : [];
+    const edits = uses.filter((c) => EDIT_TOOLS.has(c.name)).length;
+    const paths = uses.filter((c) => FILE_TOOLS.has(c.name)).map((c) => c.input?.file_path ?? c.input?.notebook_path).filter((p) => typeof p === "string" && p.startsWith("/"));
+    return { ...base, kind: "assistant", edits, ...paths.length ? { paths } : {} };
+  }
+  if (Array.isArray(content) && content.some((c) => c?.type === "tool_result")) {
+    return { ...base, kind: "tool_result" };
+  }
+  const text3 = typeof content === "string" ? content : Array.isArray(content) ? content.filter((c) => c?.type === "text").map((c) => c.text ?? "").join(" ") : "";
+  const isHuman = d.origin?.kind === "human" && !d.isMeta && text3.trim() !== "" && !text3.trimStart().startsWith("<");
+  return isHuman ? { ...base, kind: "prompt", text: clipText(text3, 160) } : { ...base, kind: "system" };
+}
+async function* bufferLines(path) {
+  let parts = [];
+  for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 })) {
+    let start = 0;
+    for (; ; ) {
+      const nl = chunk.indexOf(10, start);
+      if (nl === -1) {
+        parts.push(chunk.subarray(start));
+        break;
+      }
+      parts.push(chunk.subarray(start, nl));
+      yield parts.length === 1 ? parts[0] : Buffer.concat(parts);
+      parts = [];
+      start = nl + 1;
+    }
+  }
+  if (parts.length > 0) yield Buffer.concat(parts);
+}
+function parseBuffer(line2) {
+  if (line2.length <= LARGE_LINE) return parseLine(line2.toString("utf8"));
+  const head = line2.toString("utf8", 0, 800);
+  if (head.includes('"type":"assistant"')) return parseLine(line2.toString("utf8"));
+  if (!head.includes('"type":"user"')) return null;
+  const tail = line2.toString("utf8", line2.length - 2e3);
+  const both = `${head} ${tail}`;
+  if (head.includes('"type":"tool_result"')) return parseToolResult(both);
+  const envelope = parseToolResult(both);
+  if (!envelope) return null;
+  return both.includes('"origin":{"kind":"human"}') ? { ...envelope, kind: "prompt", text: "(attachment)" } : { ...envelope, kind: "system" };
+}
+async function readEvents(path) {
+  const events = [];
+  for await (const line2 of bufferLines(path)) {
+    const event = parseBuffer(line2);
+    if (event) events.push(event);
+  }
+  return events;
+}
+function existingAncestor(path) {
+  let dir = path;
+  for (let i = 0; i < 40; i++) {
+    if (existsSync2(dir)) return dir;
+    const parent = dirname4(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+function makeResolvers(known) {
+  const byPath = new Map(known.map((k) => [k.path, k.project_key]));
+  const findByPath = (path) => byPath.get(path) ?? null;
+  const findByPrefix = (prefix) => known.find((k) => k.path.startsWith(prefix))?.project_key ?? null;
+  const byCwd = /* @__PURE__ */ new Map();
+  const byDir = /* @__PURE__ */ new Map();
+  const roots = [];
+  const detect = (dir) => detectProject(dir, findByPath, {});
+  const fromMissing = (cwd) => {
+    const seen = findByPath(cwd);
+    if (seen) return { project: seen, isRepo: true };
+    const orca = /\/orca\/workspaces\/([^/]+)\/[^/]+/.exec(cwd);
+    if (orca) {
+      const prefix = `${cwd.slice(0, (orca.index ?? 0) + orca[0].lastIndexOf("/"))}/`;
+      return { project: findByPrefix(prefix) ?? orca[1], isRepo: true };
+    }
+    if (SCRATCH.test(cwd)) return { project: "(scratch)", isRepo: false };
+    const ancestor = existingAncestor(cwd);
+    if (ancestor) {
+      const found = detect(ancestor);
+      if (found.is_repo) return { project: found.project, isRepo: true };
+    }
+    return { project: basename2(cwd), isRepo: false };
+  };
+  return {
+    cwd(cwd) {
+      if (!cwd) return { project: "(unknown)", isRepo: false };
+      let hit = byCwd.get(cwd);
+      if (!hit) {
+        if (existsSync2(cwd)) {
+          const found = detect(cwd);
+          hit = SCRATCH.test(cwd) && !found.is_repo ? { project: "(scratch)", isRepo: false } : { project: found.project, isRepo: found.is_repo };
+        } else {
+          hit = fromMissing(cwd);
+        }
+        byCwd.set(cwd, hit);
+      }
+      return hit;
+    },
+    path(file) {
+      const dir = dirname4(file);
+      if (byDir.has(dir)) return byDir.get(dir) ?? null;
+      const known2 = roots.find((r) => file.startsWith(`${r.root}/`));
+      if (known2) {
+        byDir.set(dir, known2.project);
+        return known2.project;
+      }
+      const ancestor = existingAncestor(dir);
+      let project = null;
+      if (ancestor) {
+        const found = detect(ancestor);
+        if (found.is_repo && !SCRATCH.test(found.project_path)) {
+          project = found.project;
+          roots.push({ root: found.project_path, project });
+        }
+      } else {
+        const missing = fromMissing(dir);
+        if (missing.isRepo) project = missing.project;
+      }
+      byDir.set(dir, project);
+      return project;
+    }
+  };
+}
+async function scanWorklog(store, input = {}) {
+  const options = input.options ?? DEFAULT_OPTIONS;
+  const signature = `${options.humanCapSeconds}:${options.aiCapSeconds}:1`;
+  const prefix = input.deviceId ? `${input.deviceId}:` : void 0;
+  const settingKey = input.deviceId ? `${SETTING_KEY}:${input.deviceId}` : SETTING_KEY;
+  if (await store.worklogSetting(settingKey) !== signature) {
+    await store.clearWorklog(prefix);
+    await store.setWorklogSetting(settingKey, signature);
+  }
+  const resolvers = makeResolvers(await store.projectPaths());
+  const result = { scanned: 0, skipped: 0 };
+  const sinceDays = input.sinceDays === void 0 ? 120 : input.sinceDays;
+  const files = listTranscripts(input.root ?? transcriptRoot(), sinceDays);
+  const keyOf2 = (path) => prefix ? `${prefix}${path}` : path;
+  if (prefix && await store.worklogSetting(SETTING_KEY)) {
+    await store.dropWorklogFiles(files.map((f) => f.path));
+    await store.setWorklogSetting(SETTING_KEY, "");
+  }
+  const known = await store.worklogFileStates(files.map((f) => keyOf2(f.path)));
+  for (const file of files) {
+    const key = keyOf2(file.path);
+    const state = known[key];
+    if (state && state.size === file.size && state.mtime === file.mtime) {
+      result.skipped++;
+      continue;
+    }
+    input.onFile?.(file.path);
+    const events = await readEvents(file.path);
+    const { minutes, facts } = computeWorklog(events, resolvers, options);
+    await store.replaceWorklogFile(key, file.size, file.mtime, minutes, facts);
+    result.scanned++;
+  }
+  return result;
+}
+var EDIT_TOOLS, FILE_TOOLS, SETTING_KEY, clipText, FIELD, field, LARGE_LINE, SCRATCH;
+var init_scan = __esm({
+  "src/worklog/scan.ts"() {
+    "use strict";
+    init_project();
+    init_compute();
+    EDIT_TOOLS = /* @__PURE__ */ new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+    FILE_TOOLS = /* @__PURE__ */ new Set([...EDIT_TOOLS, "Read"]);
+    SETTING_KEY = "worklog_options";
+    clipText = (text3, max) => {
+      const flat = text3.replace(/\s+/g, " ").trim();
+      return flat.length > max ? `${flat.slice(0, max - 1)}\u2026` : flat;
+    };
+    FIELD = /* @__PURE__ */ new Map();
+    field = (line2, name) => {
+      let re = FIELD.get(name);
+      if (!re) {
+        re = new RegExp(`"${name}":"([^"\\\\]*)"`);
+        FIELD.set(name, re);
+      }
+      const m = re.exec(line2);
+      return m ? m[1] : null;
+    };
+    LARGE_LINE = 64 * 1024;
+    SCRATCH = /\/scratchpad(\/|$)|\/tmp\/claude-|Application Support\/Claude|\/private\/tmp\//;
+  }
+});
+
+// src/core/markdown.ts
+function renderVault(data) {
+  const files = [];
+  const t = data.tables;
+  const live = (rows) => (rows ?? []).filter((r) => r.valid_until == null);
+  const entities = live(t.entities);
+  const facts = live(t.observations);
+  const relations = live(t.relations);
+  const fileOf = /* @__PURE__ */ new Map();
+  const used = /* @__PURE__ */ new Set();
+  for (const e of entities) {
+    let name = slug(String(e.name));
+    if (used.has(`${e.project_key}/${name}`)) name = `${name}-${e.entity_type}`;
+    used.add(`${e.project_key}/${name}`);
+    fileOf.set(String(e.id), name);
+  }
+  const byId = new Map(entities.map((e) => [String(e.id), e]));
+  const link = (id) => `[[${fileOf.get(id)}|${byId.get(id)?.name}]]`;
+  for (const e of entities) {
+    const id = String(e.id);
+    const out = relations.filter((r) => r.source_id === id && byId.has(String(r.target_id)));
+    const incoming = relations.filter((r) => r.target_id === id && byId.has(String(r.source_id)));
+    const lines = [
+      "---",
+      `type: ${e.entity_type}`,
+      `project: ${e.project_key}`,
+      `importance: ${e.importance}`,
+      `updated: ${day2(e.updated_at)}`,
+      `tags: [${e.entity_type}]`,
+      "---",
+      `# ${e.name}`,
+      ""
+    ];
+    if (e.summary) lines.push(String(e.summary), "");
+    const own = facts.filter((f) => f.entity_id === id);
+    if (own.length) lines.push("## Facts", ...own.map((f) => `- ${f.content}`), "");
+    if (out.length || incoming.length) {
+      lines.push(
+        "## Relations",
+        ...out.map((r) => `- ${r.relation_type} ${link(String(r.target_id))}${r.context ? ` \u2014 ${r.context}` : ""}`),
+        ...incoming.map((r) => `- ${link(String(r.source_id))} ${r.relation_type} this${r.context ? ` \u2014 ${r.context}` : ""}`),
+        ""
+      );
+    }
+    files.push({ path: `${e.project_key}/entities/${fileOf.get(id)}.md`, content: lines.join("\n") });
+  }
+  const projects = /* @__PURE__ */ new Set([
+    ...entities.map((e) => String(e.project_key)),
+    ...(t.entries ?? []).map((e) => String(e.project_key))
+  ]);
+  for (const project of projects) {
+    const index = [`# ${project}`, ""];
+    const mine = entities.filter((e) => e.project_key === project);
+    for (const type of [...new Set(mine.map((e) => String(e.entity_type)))].sort()) {
+      index.push(`## ${type}`, ...mine.filter((e) => e.entity_type === type).map((e) => `- ${link(String(e.id))}`), "");
+    }
+    files.push({ path: `${project}/README.md`, content: index.join("\n") });
+    const notes = (t.entries ?? []).filter((e) => e.project_key === project).sort((a, b) => Number(b.created_at) - Number(a.created_at));
+    if (notes.length) {
+      const lines = [`# Notes \u2014 ${project}`, ""];
+      for (const n of notes) {
+        lines.push(`## ${n.title}`, `*${n.type} \xB7 ${n.scope}${n.scope_ref ? `:${n.scope_ref}` : ""} \xB7 ${day2(n.created_at)}*`, "", String(n.content), "");
+      }
+      files.push({ path: `${project}/notes.md`, content: lines.join("\n") });
+    }
+  }
+  return files;
+}
+var slug, day2;
+var init_markdown = __esm({
+  "src/core/markdown.ts"() {
+    "use strict";
+    slug = (text3) => text3.normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/ı/g, "i").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80) || "untitled";
+    day2 = (seconds) => typeof seconds === "number" ? new Date(seconds * 1e3).toISOString().slice(0, 10) : "";
+  }
+});
+
 // src/cli/digest.ts
 function formatDigest(header, d) {
   const { stats } = d;
@@ -25160,18 +25390,12 @@ __export(commands_exports, {
   hookSessionStart: () => hookSessionStart,
   importCommand: () => importCommand,
   noteCommand: () => noteCommand,
-  openStore: () => openStore,
   projectFor: () => projectFor,
   projectsCommand: () => projectsCommand,
   snapshot: () => snapshot
 });
 import { existsSync as existsSync3, mkdirSync as mkdirSync3, readFileSync as readFileSync3, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname5, join as join5, resolve } from "node:path";
-function openStore() {
-  const path = defaultDbPath();
-  const db = openDb(path);
-  return { db, store: new Store(db), path };
-}
 function flag(args, name) {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : void 0;
@@ -25193,9 +25417,9 @@ function stdinJson() {
     return {};
   }
 }
-function projectFor(store, cwd) {
-  const detected = detectProject(cwd, (p) => store.findProjectByPath(p));
-  store.setContext({ project: detected.project, project_path: detected.project_path });
+async function projectFor(store, cwd) {
+  const detected = await resolveProject(cwd, (p) => store.findProjectByPath(p));
+  await store.setContext({ project: detected.project, project_path: detected.project_path });
   return detected;
 }
 async function hookSessionStart() {
@@ -25203,14 +25427,14 @@ async function hookSessionStart() {
   const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
   let output;
   try {
-    const { store, db } = openStore();
-    const detected = projectFor(store, cwd);
-    const { context: context2, status } = formatDigest(detected, store.digest(detected.project, { branch: detected.branch }));
+    const backend = openBackend({ timeoutMs: 4e3 });
+    const { store } = backend;
+    const detected = await projectFor(store, cwd);
+    const { context: context2, status } = formatDigest(detected, await store.digest(detected.project, { branch: detected.branch }));
     const device = deviceInfo();
-    const client = openRulesClient(db, { timeoutMs: 1500 });
-    if (client.mode === "local") await client.registerDevice(device);
-    const rules = await resolveForHook(client, { project: detected.project, org: detected.org, device: device.id });
-    db.close();
+    if (backend.mode === "local") await backend.rules.registerDevice(device);
+    const rules = await resolveForHook(backend.rules, { project: detected.project, org: detected.org, device: device.id });
+    backend.close();
     const rulesNote = rules.text ? rules.stale ? " \xB7 rules (cached)" : " \xB7 rules" : rules.error ? " \xB7 rules unavailable" : "";
     const pending = rules.pending ? ` \xB7 ${rules.pending} rule proposal(s) to review` : "";
     const staleLine = rules.stale ? "\n(These rules come from the local cache: the server could not be reached.)" : "";
@@ -25227,71 +25451,58 @@ async function hookSessionStart() {
   process.stdout.write(`${JSON.stringify(output)}
 `);
 }
-function snapshot(args) {
+async function snapshot(args) {
   const cwd = resolve(flag(args, "--cwd") ?? process.cwd());
-  const query = flag(args, "--query");
-  const entity = flag(args, "--entity");
-  const { store, db } = openStore();
-  const detected = projectFor(store, cwd);
-  const project = detected.project;
-  if (entity) {
-    const out2 = store.describe({ project, name: entity, entity_type: flag(args, "--type") });
-    db.close();
-    process.stdout.write(`${JSON.stringify(out2)}
+  const backend = openBackend();
+  try {
+    const { store } = backend;
+    const detected = await projectFor(store, cwd);
+    const entity = flag(args, "--entity");
+    const out = entity ? await store.describe({ project: detected.project, name: entity, entity_type: flag(args, "--type") }) : { ...await store.snapshot({ project: detected.project, branch: detected.branch, query: flag(args, "--query") }), location: backend.location };
+    process.stdout.write(`${JSON.stringify(out)}
 `);
-    return;
+  } finally {
+    backend.close();
   }
-  const group = store.latestGroup(project, detected.branch);
-  const tasks = group ? { summary: store.taskSummary(project, group), items: store.taskStatus({ project, task_group: group }).tasks } : null;
-  const graph = store.graphAll(project);
-  const out = {
-    project,
-    branch: detected.branch,
-    stats: store.graphStats(project),
-    tasks,
-    notes: store.getContext({ project, all: true, limit: 8 }).entries,
-    entities: graph.entities.slice(0, 40),
-    relations: graph.relations.length,
-    search: query ? store.recall({ project, q: query, limit: 8 }) : void 0
-  };
-  db.close();
-  process.stdout.write(`${JSON.stringify(out)}
-`);
 }
-function forgetCommand(args) {
+async function forgetCommand(args) {
   const name = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--")));
   if (!name) fail2("Usage: task-runner-mcp forget <name> [--type t] [--cwd dir]");
-  const { store, db } = openStore();
-  const detected = projectFor(store, resolve(flag(args, "--cwd") ?? process.cwd()));
-  const result = store.forget({ project: detected.project, name, entity_type: flag(args, "--type") });
-  db.close();
-  console.log(JSON.stringify(result));
+  const backend = openBackend();
+  try {
+    const detected = await projectFor(backend.store, resolve(flag(args, "--cwd") ?? process.cwd()));
+    console.log(JSON.stringify(await backend.store.forget({ project: detected.project, name, entity_type: flag(args, "--type") })));
+  } finally {
+    backend.close();
+  }
 }
-function noteCommand(args) {
+async function noteCommand(args) {
   const text3 = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--"))).join(" ").trim();
-  if (!text3) fail2("Usage: task-runner-mcp note <text> [--cwd dir]");
-  const { store, db } = openStore();
-  const detected = projectFor(store, resolve(flag(args, "--cwd") ?? process.cwd()));
-  const title = text3.length > 80 ? `${text3.slice(0, 77)}...` : text3;
-  const type = flag(args, "--type") ?? "note";
-  const saved = store.saveEntry({
-    project: detected.project,
-    type,
-    title,
-    content: text3,
-    scope: detected.branch ? "branch" : "project",
-    scope_ref: detected.branch
-  });
-  db.close();
-  console.log(JSON.stringify(saved));
+  if (!text3) fail2("Usage: task-runner-mcp note <text> [--type t] [--cwd dir]");
+  const backend = openBackend();
+  try {
+    const detected = await projectFor(backend.store, resolve(flag(args, "--cwd") ?? process.cwd()));
+    const title = text3.length > 80 ? `${text3.slice(0, 77)}...` : text3;
+    const saved = await backend.store.saveEntry({
+      project: detected.project,
+      type: flag(args, "--type") ?? "note",
+      title,
+      content: text3,
+      scope: detected.branch ? "branch" : "project",
+      scope_ref: detected.branch
+    });
+    console.log(JSON.stringify(saved));
+  } finally {
+    backend.close();
+  }
 }
-function exportCommand(args) {
-  const { store, db } = openStore();
+async function exportCommand(args) {
+  const backend = openBackend({ timeoutMs: 12e4 });
   const project = flag(args, "--project") ?? null;
   const format = flag(args, "--format") ?? "json";
   const out = flag(args, "--out");
-  const data = store.exportAll(project);
-  db.close();
+  const data = await backend.store.exportAll(project);
+  backend.close();
   if (format === "markdown") {
     if (!out) fail2("--out <directory> is required for --format markdown");
     const files = renderVault(data);
@@ -25314,7 +25525,7 @@ function exportCommand(args) {
 `);
   }
 }
-function importCommand(args) {
+async function importCommand(args) {
   const file = args[0];
   if (!file) fail2("Usage: task-runner-mcp import <file.json>");
   let data;
@@ -25323,19 +25534,23 @@ function importCommand(args) {
   } catch (error2) {
     return fail2(`Cannot read ${file}: ${error2 instanceof Error ? error2.message : String(error2)}`);
   }
-  const { store, db } = openStore();
-  const result = store.importAll(data);
-  db.close();
-  console.error(`Imported: ${JSON.stringify(result.imported)}`);
+  const backend = openBackend({ timeoutMs: 3e5 });
+  try {
+    const result = await backend.store.importAll(data);
+    console.error(`Imported into ${backend.location}: ${JSON.stringify(result.imported)}`);
+  } finally {
+    backend.close();
+  }
 }
-function projectsCommand(args) {
+async function projectsCommand(args) {
   const [action, key] = args;
-  const { store, db } = openStore();
+  const backend = openBackend();
+  const { store } = backend;
   try {
     if (!action || action === "list") {
-      const rows = store.listProjects();
+      const rows = await store.listProjects();
       for (const p of rows) {
-        const stats = store.graphStats(String(p.key));
+        const stats = await store.graphStats(String(p.key));
         console.log(`${p.key}	${stats.entities} entities	${stats.entries} notes	${p.project_path ?? ""}`);
       }
       if (rows.length === 0) console.log("No projects yet.");
@@ -25343,44 +25558,49 @@ function projectsCommand(args) {
       const into = args[2];
       if (!key || !into) fail2("Usage: task-runner-mcp projects merge <from> <into> --yes");
       if (!has(args, "--yes")) fail2(`This folds '${key}' into '${into}' and removes '${key}'. Re-run with --yes to confirm.`);
-      console.log(JSON.stringify(store.mergeProjects(key, into)));
+      console.log(JSON.stringify(await store.mergeProjects(key, into)));
     } else if (action === "delete") {
       if (!key) fail2("Usage: task-runner-mcp projects delete <key> --yes");
       if (!has(args, "--yes")) fail2(`This permanently deletes all memory for '${key}'. Re-run with --yes to confirm.`);
-      store.deleteProject(key);
+      await store.deleteProject(key);
       console.error(`Deleted ${key}`);
     } else {
       fail2("Usage: task-runner-mcp projects [list | merge <from> <into> --yes | delete <key> --yes]");
     }
   } finally {
-    db.close();
+    backend.close();
   }
 }
-function doctor() {
+async function doctor() {
   const path = defaultDbPath();
   console.log(`task-runner-mcp ${SERVER_VERSION}`);
   console.log(`node         ${process.version}`);
-  console.log(`database     ${path} (${existsSync3(path) ? "exists" : "will be created on first use"})`);
   try {
-    const { store, db } = openStore();
-    const version2 = db.get("SELECT sqlite_version() AS v")?.v;
-    const projects = store.listProjects().length;
-    const global = store.graphStats(GLOBAL_PROJECT).entities;
-    console.log(`sqlite       ${version2} (FTS5 ok)`);
-    console.log(`projects     ${projects}`);
-    console.log(`global facts ${global}`);
-    const detected = detectProject(process.cwd(), (p) => store.findProjectByPath(p));
-    console.log(`this folder  ${detected.project}${detected.branch ? ` @ ${detected.branch}` : ""}`);
+    const backend = openBackend();
+    const { store } = backend;
+    if (backend.mode === "local") {
+      console.log(`database     ${path} (${existsSync3(path) ? "exists" : "will be created on first use"})`);
+      const version2 = backend.db.get("SELECT sqlite_version() AS v")?.v;
+      console.log(`sqlite       ${version2} (FTS5 ok)`);
+    } else {
+      console.log(`memory       ${backend.location}`);
+    }
+    const projects = await store.listProjects();
+    console.log(`projects     ${projects.length}`);
+    console.log(`global facts ${(await store.graphStats(GLOBAL_PROJECT)).entities}`);
+    const detected = await resolveProject(process.cwd(), (p) => store.findProjectByPath(p));
+    console.log(`this folder  ${detected.project}${detected.branch ? ` @ ${detected.branch}` : ""}${detected.org ? ` (org ${detected.org})` : ""}`);
+    console.log(`this device  ${deviceInfo().label} (${deviceInfo().id})`);
     const byPath = /* @__PURE__ */ new Map();
-    for (const p of store.listProjects()) {
+    for (const p of projects) {
       if (p.project_path) byPath.set(String(p.project_path), [...byPath.get(String(p.project_path)) ?? [], String(p.key)]);
     }
-    for (const [path2, keys] of byPath) {
+    for (const [dup, keys] of byPath) {
       if (keys.length > 1) {
-        console.log(`duplicate    ${path2} is recorded as ${keys.join(", ")} (fix: task-runner-mcp projects merge <from> <into> --yes)`);
+        console.log(`duplicate    ${dup} is recorded as ${keys.join(", ")} (fix: task-runner-mcp projects merge <from> <into> --yes)`);
       }
     }
-    db.close();
+    backend.close();
   } catch (error2) {
     console.log(`error        ${error2 instanceof Error ? error2.message : String(error2)}`);
     process.exitCode = 1;
@@ -25396,7 +25616,7 @@ var init_commands = __esm({
     "use strict";
     init_constants();
     init_markdown();
-    init_store();
+    init_backend();
     init_project();
     init_sqlite();
     init_remote();
@@ -25408,8 +25628,10 @@ var init_commands = __esm({
 // src/cli/worklog.ts
 var worklog_exports = {};
 __export(worklog_exports, {
+  rangeFromName: () => rangeFromName,
   worklogCommand: () => worklogCommand,
-  worklogOptions: () => worklogOptions
+  worklogOptions: () => worklogOptions,
+  worklogTool: () => worklogTool
 });
 import { resolve as resolve2 } from "node:path";
 function worklogOptions(args) {
@@ -25423,27 +25645,48 @@ function worklogOptions(args) {
     aiCapSeconds: minutes("--ai-cap", DEFAULT_OPTIONS.aiCapSeconds)
   };
 }
+function rangeFromName(name, from, to) {
+  return resolveRange({
+    today: name === "today",
+    yesterday: name === "yesterday",
+    week: name === "week",
+    lastWeek: name === "last-week",
+    month: name === "month",
+    from: name === "custom" ? from : void 0,
+    to: name === "custom" ? to : void 0
+  });
+}
+async function worklogTool(store, input, deviceId, options = {}) {
+  const range = rangeFromName(input.range, input.from, input.to);
+  await scanWorklog(store, { sinceDays: daysBackTo(range), options: worklogOptions([]), deviceId });
+  if (options.scanOnly) return null;
+  return summarizeReport(await buildReport(store, { range, project: input.project, exclude: exclusions(), detail: input.detail, detailLimit: 10 }));
+}
 async function worklogCommand(args) {
   const [first] = args;
   const sub = first && !first.startsWith("--") ? first : "report";
-  const { store, db } = openStore();
+  const backend = openBackend();
+  const { store } = backend;
+  const deviceId = deviceInfo().id;
   try {
     const options = worklogOptions(args);
     const explicitSince = flag(args, "--since-days");
     const scan = (sinceDays = args.includes("--all") ? null : Number(explicitSince ?? 120)) => scanWorklog(store, {
       sinceDays,
       options,
+      deviceId,
       onFile: process.stderr.isTTY ? () => process.stderr.write(".") : void 0
     });
     if (sub === "scan") {
       const result = await scan();
-      console.log(`Scanned ${result.scanned} transcripts, ${result.skipped} unchanged.`);
+      if (process.stderr.isTTY) process.stderr.write("\n");
+      console.log(`Scanned ${result.scanned} transcripts, ${result.skipped} unchanged (${backend.location}).`);
       return;
     }
     if (sub === "pending") {
       if (!args.includes("--no-scan")) await scan();
       const target = flag(args, "--target") ?? "default";
-      const rows = store.worklogPending(target);
+      const rows = await store.worklogPending(target);
       if (rows.length === 0) console.log("Nothing waiting for export.");
       for (const r of rows) {
         console.log(`${r.project_key}	${taskInfo(r.branch).label}	${r.branch}	you ${formatDuration(r.human_s)}	agent ${formatDuration(r.ai_s)}	wall ${formatDuration(r.minutes * 60)}`);
@@ -25453,7 +25696,7 @@ async function worklogCommand(args) {
     if (sub === "exported") {
       const [, project2, branch] = args;
       if (!project2 || !branch) throw new Error("Usage: task-runner-mcp worklog exported <project> <branch> [--target name]");
-      console.log(JSON.stringify(store.worklogMarkExported(project2, branch, flag(args, "--target") ?? "default")));
+      console.log(JSON.stringify(await store.worklogMarkExported(project2, branch, flag(args, "--target") ?? "default")));
       return;
     }
     if (sub !== "report") throw new Error("Usage: task-runner-mcp worklog [report|scan|pending|exported] [options]");
@@ -25468,35 +25711,39 @@ async function worklogCommand(args) {
       to: flag(args, "--to")
     });
     if (!args.includes("--no-scan")) {
-      const daysBack = Math.ceil((Date.now() / 1e3 - range.from) / 86400) + 1;
-      await scan(args.includes("--all") ? null : Number(explicitSince ?? Math.max(daysBack, 2)));
+      await scan(args.includes("--all") ? null : Number(explicitSince ?? daysBackTo(range)));
       if (process.stderr.isTTY) process.stderr.write("\n");
     }
     let project = flag(args, "--project") ?? null;
-    if (project === ".") project = projectFor(store, resolve2(flag(args, "--cwd") ?? process.cwd())).project;
-    const exclude = (flag(args, "--exclude") ?? process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
+    if (project === ".") project = (await projectFor(store, resolve2(flag(args, "--cwd") ?? process.cwd()))).project;
+    const exclude = exclusions(args);
     const format = flag(args, "--format") ?? "text";
     if (format === "csv") {
-      console.log(renderCsv(store, { range, project, exclude }));
+      console.log(await renderCsv(store, { range, project, exclude }));
       return;
     }
     const detail = args.includes("--detail") || format === "md" || format === "json";
-    const report = buildReport(store, { range, project, exclude, detail });
+    const report = await buildReport(store, { range, project, exclude, detail });
     if (format === "json") console.log(JSON.stringify(report));
     else if (format === "md") console.log(renderMarkdown(report));
     else if (format === "text") console.log(renderText(report, { detail }));
     else throw new Error(`Unknown format '${format}'. Use text, md, csv or json.`);
   } finally {
-    db.close();
+    backend.close();
   }
 }
+var exclusions, daysBackTo;
 var init_worklog = __esm({
   "src/cli/worklog.ts"() {
     "use strict";
+    init_backend();
+    init_remote();
     init_compute();
     init_report();
     init_scan();
     init_commands();
+    exclusions = (args = []) => (flag(args, "--exclude") ?? process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
+    daysBackTo = (range) => Math.max(Math.ceil((Date.now() / 1e3 - range.from) / 86400) + 1, 2);
   }
 });
 
@@ -25508,32 +25755,35 @@ __export(serve_exports, {
 import { existsSync as existsSync4 } from "node:fs";
 import { resolve as resolve3 } from "node:path";
 async function serve() {
-  const { store, db } = openStore();
+  const backend = openBackend();
+  const { store } = backend;
   const cwd = process.env.TASK_RUNNER_CWD || process.cwd();
-  const session = new SessionHolder(() => {
-    const detected = projectFor(store, cwd);
+  const session = new SessionHolder(async () => {
+    const detected = await projectFor(store, cwd);
     return { project: detected.project, project_path: detected.project_path, branch: detected.branch, pr: null, org: detected.org };
   });
   const device = deviceInfo();
-  const rulesClient = openRulesClient(db);
-  void rulesClient.registerDevice(device).catch(() => void 0);
+  void backend.rules.registerDevice(device).catch(() => void 0);
   const server = createServer({
     store,
     session,
     rules: {
       async show() {
-        const s = session.get();
-        const resolved = await rulesClient.resolve({ project: s.project, org: s.org, device: device.id }).catch(async (error2) => {
-          const fallback = await resolveForHook(rulesClient, { project: s.project, org: s.org, device: device.id });
+        const s = await session.get();
+        const ctx = { project: s.project, org: s.org, device: device.id };
+        try {
+          const resolved = await backend.rules.resolve(ctx);
+          return { text: resolved.text, parts: resolved.parts, pending: resolved.pending, stale: false };
+        } catch (error2) {
+          const fallback = await resolveForHook(backend.rules, ctx);
           if (!fallback.text) throw error2;
-          return { text: fallback.text, parts: [], pending: 0, chars: fallback.text.length, truncated: false, stale: true };
-        });
-        return { text: resolved.text, parts: resolved.parts, pending: resolved.pending, stale: "stale" in resolved };
+          return { text: fallback.text, parts: [], pending: 0, stale: true };
+        }
       },
       async propose(input) {
-        const s = session.get();
+        const s = await session.get();
         const scope = input.scope;
-        const made = await rulesClient.propose({
+        const made = await backend.rules.propose({
           key: {
             scope,
             ref: scope === "org" ? input.ref ?? s.org : scope === "project" || scope === "project_device" ? input.ref ?? s.project : null,
@@ -25548,57 +25798,20 @@ async function serve() {
       }
     },
     fileExists: (root, relative) => existsSync4(resolve3(root, relative)),
-    worklog: async (input) => {
-      const range = resolveRange({
-        today: input.range === "today",
-        yesterday: input.range === "yesterday",
-        week: input.range === "week",
-        lastWeek: input.range === "last-week",
-        month: input.range === "month",
-        from: input.range === "custom" ? input.from : void 0,
-        to: input.range === "custom" ? input.to : void 0
-      });
-      const daysBack = Math.ceil((Date.now() / 1e3 - range.from) / 86400) + 1;
-      await scanWorklog(store, { sinceDays: Math.max(daysBack, 2), options: worklogOptions([]) });
-      const exclude = (process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
-      const report = buildReport(store, { range, project: input.project, exclude, detail: input.detail, detailLimit: 10 });
-      return {
-        period: range.label,
-        totals: {
-          you: formatDuration(report.totals.you_s),
-          agent: formatDuration(report.totals.agent_s),
-          wall: formatDuration(report.totals.wall_s),
-          tasks: report.totals.tasks,
-          projects: report.totals.projects
-        },
-        by_day: report.days.map((d) => ({ day: d.day, you: formatDuration(d.you_s), agent: formatDuration(d.agent_s), wall: formatDuration(d.wall_s) })),
-        tasks: report.rows.slice(0, 20).map((r) => ({
-          project: r.project,
-          task: r.label,
-          kind: r.kind,
-          you: formatDuration(r.you_s),
-          agent: formatDuration(r.agent_s),
-          wall: formatDuration(r.wall_s),
-          days: r.days,
-          prompts: r.prompts,
-          file_edits: r.edits,
-          started_from: r.first_prompt ?? void 0,
-          task_groups: r.task_groups?.map((g) => `${g.name} ${g.done}/${g.total}`),
-          notes: r.notes?.slice(0, 6).map((n) => `${n.at} [${n.type}] ${n.title}`)
-        })),
-        more_tasks: Math.max(0, report.rows.length - 20) || void 0
-      };
-    }
+    worklog: (input) => worklogTool(store, input, device.id)
   });
   setTimeout(() => {
-    const now = Math.floor(Date.now() / 1e3);
-    if (now - Number(store.worklogSetting("worklog_warmed_at") ?? 0) < 600) return;
-    store.setWorklogSetting("worklog_warmed_at", String(now));
-    void scanWorklog(store, { sinceDays: 8, options: worklogOptions([]) }).catch(() => void 0);
+    void (async () => {
+      const now = Math.floor(Date.now() / 1e3);
+      const stampKey = `worklog_warmed_at:${device.id}`;
+      if (now - Number(await store.worklogSetting(stampKey) ?? 0) < 600) return;
+      await store.setWorklogSetting(stampKey, String(now));
+      await worklogTool(store, { range: "week" }, device.id, { scanOnly: true });
+    })().catch(() => void 0);
   }, 2e4).unref();
   const close = () => {
     try {
-      db.close();
+      backend.close();
     } catch {
     }
   };
@@ -25613,11 +25826,10 @@ var init_serve = __esm({
     init_stdio2();
     init_server3();
     init_session();
-    init_report();
-    init_scan();
+    init_backend();
     init_remote();
-    init_commands();
     init_worklog();
+    init_commands();
   }
 });
 
@@ -25704,7 +25916,7 @@ var init_rules_api = __esm({
   }
 });
 
-// src/cli/rest.ts
+// src/core/rest.ts
 async function handleApi(store, req, rules) {
   if (rules && isRulesPath(req.path)) return handleRulesApi(rules, req);
   try {
@@ -25860,7 +26072,7 @@ async function route2(store, { method, path, query, body }) {
 }
 var text2, need2;
 var init_rest = __esm({
-  "src/cli/rest.ts"() {
+  "src/core/rest.ts"() {
     "use strict";
     init_errors4();
     init_constants();
@@ -25924,13 +26136,13 @@ async function worklogApi(store, url) {
       to: range === "custom" ? q.get("to") ?? void 0 : void 0
     });
     const daysBack = Math.ceil((Date.now() / 1e3 - resolved.from) / 86400) + 1;
-    await scanWorklog(store, { sinceDays: Math.max(daysBack, 2), options: worklogOptions([]) });
+    await scanWorklog(store, { sinceDays: Math.max(daysBack, 2), options: worklogOptions([]), deviceId: deviceInfo().id });
     const project = q.get("project") || null;
     const exclude = (process.env.TASK_RUNNER_WORKLOG_EXCLUDE ?? "").split(",").filter(Boolean);
     if (url.pathname.endsWith(".csv")) {
-      return { status: 200, body: renderCsv(store, { range: resolved, project, exclude }), type: "text/csv; charset=utf-8" };
+      return { status: 200, body: await renderCsv(store, { range: resolved, project, exclude }), type: "text/csv; charset=utf-8" };
     }
-    const report = buildReport(store, { range: resolved, project, exclude, detail: q.get("detail") === "true" });
+    const report = await buildReport(store, { range: resolved, project, exclude, detail: q.get("detail") === "true" });
     return { status: 200, body: JSON.stringify({ success: true, ...report }), type: "application/json" };
   } catch (error2) {
     return { status: 400, body: JSON.stringify({ error: error2 instanceof Error ? error2.message : "Bad request" }), type: "application/json" };
@@ -26002,8 +26214,14 @@ function createDashboardServer(store, staticDir, rules) {
 }
 async function dashboard(args) {
   const port = Number(flag(args, "--port") ?? process.env.PORT ?? 4747);
-  const { store, db } = openStore();
-  const server = createDashboardServer(store, findStaticDir(), new RulesStore(db));
+  const backend = openBackend();
+  if (!backend.local) {
+    backend.close();
+    console.error(`Memory lives on ${backend.location}. Open that address in a browser for the dashboard.`);
+    return;
+  }
+  const { db } = backend;
+  const server = createDashboardServer(backend.local, findStaticDir(), new RulesStore(db));
   server.on("error", (error2) => {
     console.error(error2.code === "EADDRINUSE" ? `Port ${port} is in use. Try --port <other>.` : error2.message);
     db.close();
@@ -26029,6 +26247,8 @@ var init_dashboard = __esm({
   "src/cli/dashboard.ts"() {
     "use strict";
     init_rules();
+    init_backend();
+    init_remote();
     init_commands();
     init_report();
     init_scan();
@@ -26066,11 +26286,10 @@ import { createInterface } from "node:readline/promises";
 function words(args) {
   return args.filter((a, i) => !a.startsWith("--") && !(i > 0 && valueFlags.has(args[i - 1])));
 }
-function context(args) {
-  const { store, db } = openStore();
-  const detected = detectProject(resolve5(flag(args, "--cwd") ?? process.cwd()), (p) => store.findProjectByPath(p));
-  const device = deviceInfo();
-  return { db, detected, device, client: openRulesClient(db) };
+async function context(args) {
+  const backend = openBackend();
+  const detected = await resolveProject(resolve5(flag(args, "--cwd") ?? process.cwd()), (p) => backend.store.findProjectByPath(p));
+  return { backend, detected, device: deviceInfo(), client: backend.rules };
 }
 function scopeOf(args, c) {
   const explicit = flag(args, "--scope");
@@ -26118,7 +26337,7 @@ function logoutCommand() {
 async function rulesCommand(args) {
   const sub = words(args)[0] && !args[0]?.startsWith("--") ? args[0] : "show";
   const rest = args[0] === sub ? args.slice(1) : args;
-  const c = context(args);
+  const c = await context(args);
   try {
     const devices = await c.client.listDevices().catch(() => []);
     const labels = new Map(devices.map((d) => [d.id, d.label]));
@@ -26228,7 +26447,7 @@ ${text3}` : has2(rest, "--clear") ? "" : text3;
         throw new Error("Usage: task-runner-mcp rules [show | list | set | edit | pending | approve <id> | reject <id> | devices | rename-device <label>]");
     }
   } finally {
-    c.db.close();
+    c.backend.close();
   }
 }
 var has2, valueFlags, describe;
@@ -26236,6 +26455,7 @@ var init_rules2 = __esm({
   "src/cli/rules.ts"() {
     "use strict";
     init_rules();
+    init_backend();
     init_project();
     init_remote();
     init_commands();
@@ -26311,7 +26531,7 @@ async function main() {
       return;
     }
     case "snapshot":
-      return (await Promise.resolve().then(() => (init_commands(), commands_exports))).snapshot(args);
+      return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).snapshot(args);
     case "dashboard": {
       const { dashboard: dashboard2 } = await Promise.resolve().then(() => (init_dashboard(), dashboard_exports));
       await dashboard2(args);
@@ -26342,17 +26562,17 @@ async function main() {
       return;
     }
     case "forget":
-      return (await Promise.resolve().then(() => (init_commands(), commands_exports))).forgetCommand(args);
+      return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).forgetCommand(args);
     case "note":
-      return (await Promise.resolve().then(() => (init_commands(), commands_exports))).noteCommand(args);
+      return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).noteCommand(args);
     case "export":
-      return (await Promise.resolve().then(() => (init_commands(), commands_exports))).exportCommand(args);
+      return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).exportCommand(args);
     case "import":
-      return (await Promise.resolve().then(() => (init_commands(), commands_exports))).importCommand(args);
+      return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).importCommand(args);
     case "projects":
-      return (await Promise.resolve().then(() => (init_commands(), commands_exports))).projectsCommand(args);
+      return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).projectsCommand(args);
     case "doctor":
-      return (await Promise.resolve().then(() => (init_commands(), commands_exports))).doctor();
+      return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).doctor();
     case "version":
     case "--version":
     case "-v":
