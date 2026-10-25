@@ -1,317 +1,408 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchApi, postApi, putApi, deleteApi } from "../lib/api";
-import type { MemoryEntry } from "../lib/types";
+import { deleteApi, errorMessage, fetchApi, postApi, putApi, qs } from "../lib/api";
+import { formatDate } from "../lib/format";
+import type { MemoryEntry, ScopeFilter } from "../lib/types";
 
 interface Props {
   projectKey: string;
-  scope?: "all" | { branch: string } | { pr: string };
+  scope: ScopeFilter | null;
+  refreshKey: number;
+  onChange: () => void;
 }
 
+const ENTRY_TYPES = ["note", "decision", "change", "issue", "discovery", "task_completed"];
 const TYPE_COLORS: Record<string, string> = {
   task_completed: "#10b981",
   decision: "#f59e0b",
-  note: "#6b7280",
+  note: "#94a3b8",
   change: "#3b82f6",
   issue: "#ef4444",
-  discovery: "#8b5cf6",
+  discovery: "#a78bfa",
 };
+const PAGE_LIMIT = 100;
+const LONG_CONTENT = 220;
 
-const SCOPE_COLORS: Record<string, string> = {
-  project: "#6b7280",
-  branch: "#3b82f6",
-  pr: "#8b5cf6",
-};
+interface Form {
+  type: string;
+  title: string;
+  content: string;
+  scope: "project" | "branch" | "pr";
+  scope_ref: string;
+}
 
-const ENTRY_TYPES = [
-  "note", "decision", "change", "issue", "discovery", "task_completed",
-];
+const EMPTY_FORM: Form = { type: "note", title: "", content: "", scope: "project", scope_ref: "" };
 
-export default function EntryList({ projectKey, scope = "all" }: Props) {
-  const [entries, setEntries] = useState<MemoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function EntryList({ projectKey, scope, refreshKey, onChange }: Props) {
+  const [entries, setEntries] = useState<MemoryEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ type: "note", title: "", content: "", scope: "project", scope_ref: "" });
-
-  function loadEntries() {
-    let url = `/context?project=${projectKey}&limit=100`;
-    if (scope === "all") {
-      url += "&all=true";
-    } else if ("branch" in scope) {
-      url += `&branch=${encodeURIComponent(scope.branch)}`;
-    } else if ("pr" in scope) {
-      url += `&pr=${encodeURIComponent(scope.pr)}`;
-    }
-
-    setLoading(true);
-    fetchApi<{ entries: MemoryEntry[] }>(url)
-      .then((d) => setEntries(d.entries))
-      .finally(() => setLoading(false));
-  }
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [form, setForm] = useState<Form>(EMPTY_FORM);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!projectKey) return;
-    loadEntries();
-  }, [projectKey, scope]);
+    let live = true;
+    const query = scope
+      ? qs({ project: projectKey, limit: PAGE_LIMIT, [scope.scope]: scope.ref })
+      : qs({ project: projectKey, limit: PAGE_LIMIT, all: true });
+    fetchApi<{ entries: MemoryEntry[] }>(`/context${query}`)
+      .then((d) => {
+        if (!live) return;
+        setEntries(d.entries);
+        setError(null);
+      })
+      .catch((e) => live && setError(errorMessage(e)));
+    return () => {
+      live = false;
+    };
+  }, [projectKey, scope, refreshKey]);
 
-  async function handleCreate() {
-    await postApi("/memory", {
-      project_key: projectKey,
-      type: formData.type,
-      title: formData.title,
-      content: formData.content,
-      scope: formData.scope,
-      scope_ref: formData.scope_ref || null,
-    });
-    setFormData({ type: "note", title: "", content: "", scope: "project", scope_ref: "" });
+  async function run(action: () => Promise<unknown>, after: () => void) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      after();
+      onChange();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const create = () =>
+    run(
+      () =>
+        postApi("/memory", {
+          project_key: projectKey,
+          type: form.type,
+          title: form.title.trim(),
+          content: form.content.trim(),
+          scope: form.scope,
+          scope_ref: form.scope === "project" ? null : form.scope_ref.trim(),
+        }),
+      () => {
+        setForm(EMPTY_FORM);
+        setShowCreate(false);
+      },
+    );
+
+  const update = (id: string) =>
+    run(
+      () => putApi("/memory", { id, type: form.type, title: form.title.trim(), content: form.content.trim() }),
+      () => setEditingId(null),
+    );
+
+  const remove = (id: string) =>
+    run(
+      () => deleteApi(`/memory${qs({ id })}`),
+      () => setConfirmingId(null),
+    );
+
+  function startEdit(entry: MemoryEntry) {
+    setEditingId(entry.id);
     setShowCreate(false);
-    loadEntries();
+    setConfirmingId(null);
+    setForm({ ...EMPTY_FORM, type: entry.type, title: entry.title, content: entry.content });
   }
 
-  async function handleDelete(id: string) {
-    await deleteApi(`/memory?id=${id}`);
-    setDeleteConfirm(null);
-    loadEntries();
-  }
-
-  async function handleUpdate(entry: MemoryEntry) {
-    await putApi("/memory", {
-      id: entry.id,
-      title: formData.title,
-      content: formData.content,
-      type: formData.type,
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
     });
-    setEditingId(null);
-    loadEntries();
   }
 
-  function startEdit(e: MemoryEntry) {
-    setEditingId(e.id);
-    setFormData({ type: e.type, title: e.title, content: e.content, scope: e.scope, scope_ref: e.scope_ref || "" });
-  }
-
-  if (loading) {
-    return (
-      <div className="text-gray-500 text-sm text-center py-8">Loading...</div>
+  if (!entries) {
+    return error ? (
+      <p className="py-8 text-center text-sm text-bad" role="alert">
+        {error}
+      </p>
+    ) : (
+      <p className="py-8 text-center text-sm text-muted">Loading…</p>
     );
   }
 
-  // Group by scope
-  const grouped: Record<string, MemoryEntry[]> = {};
+  const groups = new Map<string, MemoryEntry[]>();
   for (const e of entries) {
     const key = e.scope === "project" ? "project" : `${e.scope}: ${e.scope_ref}`;
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(e);
+    groups.set(key, [...(groups.get(key) ?? []), e]);
   }
+  const groupKeys = [...groups.keys()].sort((a, b) =>
+    a === "project" ? -1 : b === "project" ? 1 : a.localeCompare(b),
+  );
 
-  const scopeKeys = Object.keys(grouped).sort((a, b) => {
-    if (a === "project") return -1;
-    if (b === "project") return 1;
-    return a.localeCompare(b);
-  });
+  const formValid =
+    form.title.trim() !== "" && form.content.trim() !== "" && (form.scope === "project" || form.scope_ref.trim() !== "");
 
   return (
-    <div className="space-y-4 overflow-y-auto">
-      {/* Create button */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-500">{entries.length} entries</span>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-muted">
+          {entries.length} {entries.length === 1 ? "note" : "notes"}
+          {entries.length >= PAGE_LIMIT && ` (latest ${PAGE_LIMIT})`}
+        </span>
         <button
-          onClick={() => { setShowCreate(!showCreate); setEditingId(null); }}
-          className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+          type="button"
+          onClick={() => {
+            setShowCreate(!showCreate);
+            setEditingId(null);
+            setForm(EMPTY_FORM);
+          }}
+          aria-expanded={showCreate}
+          className="btn btn-primary"
         >
-          + New Entry
+          New note
         </button>
       </div>
 
-      {/* Create form */}
+      {error && (
+        <p className="text-sm text-bad" role="alert">
+          {error}
+        </p>
+      )}
+
       {showCreate && (
-        <div className="bg-gray-900 border border-gray-700 rounded-lg p-4 space-y-3">
-          <div className="flex gap-3">
-            <select
-              value={formData.type}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
-            >
-              {ENTRY_TYPES.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-            <select
-              value={formData.scope}
-              onChange={(e) => setFormData({ ...formData, scope: e.target.value })}
-              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
-            >
-              <option value="project">project</option>
-              <option value="branch">branch</option>
-              <option value="pr">pr</option>
-            </select>
-            {formData.scope !== "project" && (
-              <input
-                value={formData.scope_ref}
-                onChange={(e) => setFormData({ ...formData, scope_ref: e.target.value })}
-                placeholder={formData.scope === "branch" ? "branch name" : "PR number"}
-                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white flex-1"
-              />
+        <form
+          className="card space-y-3 p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (formValid) create();
+          }}
+          aria-label="New note"
+        >
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <label htmlFor="new-type" className="mb-1 block text-xs text-muted">
+                Type
+              </label>
+              <select
+                id="new-type"
+                value={form.type}
+                onChange={(e) => setForm({ ...form, type: e.target.value })}
+                className="field w-auto"
+              >
+                {ENTRY_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="new-scope" className="mb-1 block text-xs text-muted">
+                Scope
+              </label>
+              <select
+                id="new-scope"
+                value={form.scope}
+                onChange={(e) => setForm({ ...form, scope: e.target.value as Form["scope"] })}
+                className="field w-auto"
+              >
+                <option value="project">project</option>
+                <option value="branch">branch</option>
+                <option value="pr">pr</option>
+              </select>
+            </div>
+            {form.scope !== "project" && (
+              <div className="min-w-40 flex-1">
+                <label htmlFor="new-scope-ref" className="mb-1 block text-xs text-muted">
+                  {form.scope === "branch" ? "Branch name" : "PR number"}
+                </label>
+                <input
+                  id="new-scope-ref"
+                  value={form.scope_ref}
+                  onChange={(e) => setForm({ ...form, scope_ref: e.target.value })}
+                  className="field"
+                />
+              </div>
             )}
           </div>
-          <input
-            value={formData.title}
-            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            placeholder="Title"
-            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white"
-          />
-          <textarea
-            value={formData.content}
-            onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-            placeholder="Content"
-            rows={3}
-            className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white resize-y"
-          />
-          <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => setShowCreate(false)}
-              className="px-3 py-1 text-xs text-gray-400 hover:text-white border border-gray-700 rounded transition-colors"
-            >
+          <div>
+            <label htmlFor="new-title" className="mb-1 block text-xs text-muted">
+              Title
+            </label>
+            <input
+              id="new-title"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              className="field"
+            />
+          </div>
+          <div>
+            <label htmlFor="new-content" className="mb-1 block text-xs text-muted">
+              Content
+            </label>
+            <textarea
+              id="new-content"
+              value={form.content}
+              onChange={(e) => setForm({ ...form, content: e.target.value })}
+              rows={4}
+              className="field resize-y"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowCreate(false)} className="btn">
               Cancel
             </button>
-            <button
-              onClick={handleCreate}
-              disabled={!formData.title || !formData.content}
-              className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded transition-colors"
-            >
+            <button type="submit" disabled={!formValid || busy} className="btn btn-primary">
               Save
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       {entries.length === 0 && !showCreate && (
-        <div className="text-gray-500 text-sm text-center py-8">
-          No memory entries yet
-        </div>
+        <p className="py-8 text-center text-sm text-muted">
+          No notes{scope ? " in this scope" : " yet"}. Agents add them with the save_memory tool.
+        </p>
       )}
 
-      {scopeKeys.map((scopeKey) => (
-        <div key={scopeKey}>
-          <div className="flex items-center gap-2 mb-2 sticky top-0 bg-gray-800 py-1 z-10">
-            <span
-              className="text-xs px-2 py-0.5 rounded-full font-medium"
-              style={{
-                backgroundColor:
-                  (SCOPE_COLORS[scopeKey === "project" ? "project" : scopeKey.startsWith("branch") ? "branch" : "pr"] || "#6b7280") + "20",
-                color:
-                  SCOPE_COLORS[scopeKey === "project" ? "project" : scopeKey.startsWith("branch") ? "branch" : "pr"] || "#6b7280",
-              }}
-            >
-              {scopeKey === "project" ? "Project scope" : scopeKey}
-            </span>
-            <span className="text-xs text-gray-600">
-              {grouped[scopeKey].length} entries
-            </span>
-          </div>
-          <div className="space-y-2">
-            {grouped[scopeKey].map((e) => (
-              <div
-                key={e.id}
-                className="bg-gray-900 border border-gray-800 rounded-lg p-3 group"
-              >
-                {editingId === e.id ? (
-                  // Edit mode
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <select
-                        value={formData.type}
-                        onChange={(ev) => setFormData({ ...formData, type: ev.target.value })}
-                        className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
-                      >
-                        {ENTRY_TYPES.map((t) => (
-                          <option key={t} value={t}>{t}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <input
-                      value={formData.title}
-                      onChange={(ev) => setFormData({ ...formData, title: ev.target.value })}
-                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
-                    />
-                    <textarea
-                      value={formData.content}
-                      onChange={(ev) => setFormData({ ...formData, content: ev.target.value })}
-                      rows={3}
-                      className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white resize-y"
-                    />
-                    <div className="flex gap-2 justify-end">
-                      <button
-                        onClick={() => setEditingId(null)}
-                        className="px-2 py-0.5 text-xs text-gray-400 hover:text-white border border-gray-700 rounded"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={() => handleUpdate(e)}
-                        className="px-2 py-0.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  // View mode
-                  <>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className="text-xs px-1.5 py-0.5 rounded"
-                        style={{
-                          backgroundColor:
-                            (TYPE_COLORS[e.type] || "#6b7280") + "20",
-                          color: TYPE_COLORS[e.type] || "#6b7280",
-                        }}
-                      >
-                        {e.type}
-                      </span>
-                      <span className="text-xs text-gray-600 ml-auto">
-                        {new Date(e.created_at * 1000).toLocaleDateString()}
-                      </span>
-                      {/* Action buttons */}
-                      <div className="hidden group-hover:flex gap-1">
-                        <button
-                          onClick={() => startEdit(e)}
-                          className="text-xs px-1.5 py-0.5 text-gray-500 hover:text-blue-400 border border-gray-800 hover:border-blue-800 rounded transition-colors"
-                        >
-                          Edit
-                        </button>
-                        {deleteConfirm === e.id ? (
-                          <button
-                            onClick={() => handleDelete(e.id)}
-                            className="text-xs px-1.5 py-0.5 text-red-400 border border-red-800 rounded"
+      {groupKeys.map((groupKey) => {
+        const list = groups.get(groupKey) ?? [];
+        return (
+          <section key={groupKey} aria-label={groupKey === "project" ? "Project scope" : groupKey}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="pill">{groupKey === "project" ? "Project scope" : groupKey}</span>
+              <span className="text-xs text-muted">{list.length}</span>
+            </div>
+            <ul className="space-y-2">
+              {list.map((e) => {
+                const long = e.content.length > LONG_CONTENT;
+                const open = expanded.has(e.id);
+                return (
+                  <li key={e.id} className="card p-3">
+                    {editingId === e.id ? (
+                      <div className="space-y-2">
+                        <div>
+                          <label htmlFor={`type-${e.id}`} className="mb-1 block text-xs text-muted">
+                            Type
+                          </label>
+                          <select
+                            id={`type-${e.id}`}
+                            value={form.type}
+                            onChange={(ev) => setForm({ ...form, type: ev.target.value })}
+                            className="field w-auto"
                           >
-                            Confirm
+                            {ENTRY_TYPES.map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor={`title-${e.id}`} className="mb-1 block text-xs text-muted">
+                            Title
+                          </label>
+                          <input
+                            id={`title-${e.id}`}
+                            value={form.title}
+                            onChange={(ev) => setForm({ ...form, title: ev.target.value })}
+                            className="field"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor={`content-${e.id}`} className="mb-1 block text-xs text-muted">
+                            Content
+                          </label>
+                          <textarea
+                            id={`content-${e.id}`}
+                            value={form.content}
+                            onChange={(ev) => setForm({ ...form, content: ev.target.value })}
+                            rows={4}
+                            className="field resize-y"
+                          />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <button type="button" onClick={() => setEditingId(null)} className="btn btn-sm">
+                            Cancel
                           </button>
-                        ) : (
                           <button
-                            onClick={() => setDeleteConfirm(e.id)}
-                            className="text-xs px-1.5 py-0.5 text-gray-500 hover:text-red-400 border border-gray-800 hover:border-red-800 rounded transition-colors"
+                            type="button"
+                            onClick={() => update(e.id)}
+                            disabled={!form.title.trim() || !form.content.trim() || busy}
+                            className="btn btn-sm btn-primary"
                           >
-                            Delete
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mb-1 flex flex-wrap items-center gap-2">
+                          <span className="pill">
+                            <span
+                              className="pill-dot"
+                              style={{ backgroundColor: TYPE_COLORS[e.type] ?? "#94a3b8" }}
+                              aria-hidden
+                            />
+                            {e.type}
+                          </span>
+                          <span className="text-xs text-muted">{formatDate(e.created_at)}</span>
+                          <div className="ml-auto flex gap-1">
+                            <button type="button" onClick={() => startEdit(e)} className="btn btn-sm">
+                              Edit
+                            </button>
+                            {confirmingId === e.id ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => remove(e.id)}
+                                  disabled={busy}
+                                  className="btn btn-sm btn-danger"
+                                >
+                                  Confirm delete
+                                </button>
+                                <button type="button" onClick={() => setConfirmingId(null)} className="btn btn-sm">
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmingId(e.id)}
+                                className="btn btn-sm btn-danger"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <h3 className="text-sm font-medium">{e.title}</h3>
+                        <p
+                          className={`mt-1 whitespace-pre-wrap break-words text-sm text-muted ${
+                            long && !open ? "line-clamp-3" : ""
+                          }`}
+                        >
+                          {e.content}
+                        </p>
+                        {long && (
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(e.id)}
+                            aria-expanded={open}
+                            className="mt-1 text-xs text-link underline"
+                          >
+                            {open ? "Show less" : "Show more"}
                           </button>
                         )}
-                      </div>
-                    </div>
-                    <div className="text-sm font-medium">{e.title}</div>
-                    <div className="text-xs text-gray-400 mt-1 line-clamp-2">
-                      {e.content}
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+                        {e.tags && <p className="mt-1 text-xs text-subtle">Tags: {e.tags}</p>}
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
-

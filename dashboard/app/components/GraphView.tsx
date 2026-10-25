@@ -1,22 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
-import type { Entity, Relation, EntityType, GraphData } from "../lib/types";
-import { ENTITY_COLORS } from "../lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import type { GraphData } from "../lib/types";
+import { entityColor } from "../lib/types";
+import { useTheme } from "../lib/theme";
 
-const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
-  ssr: false,
-});
+type ForceGraphComponent = ComponentType<any>;
 
 interface GraphNode {
   id: string;
   name: string;
-  entity_type: EntityType;
+  entity_type: string;
   importance: number;
   observation_count: number;
   color: string;
-  highlighted?: boolean;
+  x?: number;
+  y?: number;
 }
 
 interface GraphLink {
@@ -29,10 +28,11 @@ interface GraphLink {
 interface Props {
   data: GraphData | null;
   highlightIds: Set<string>;
+  selectedId: string | null;
   onSelectEntity: (id: string) => void;
 }
 
-const ENTITY_TYPE_LABELS: Record<string, string> = {
+const TYPE_LABELS: Record<string, string> = {
   preference: "Preferences",
   decision: "Decisions",
   pattern: "Patterns",
@@ -43,247 +43,312 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   convention: "Conventions",
 };
 
-export default function GraphView({ data, highlightIds, onSelectEntity }: Props) {
-  const [graphData, setGraphData] = useState<{
-    nodes: GraphNode[];
-    links: GraphLink[];
-  }>({ nodes: [], links: [] });
+const FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+
+interface Palette {
+  bg: string;
+  fg: string;
+  muted: string;
+  line: string;
+  raised: string;
+}
+
+const DEFAULT_PALETTE: Palette = { bg: "#0b0f14", fg: "#e8edf3", muted: "#a9b4c2", line: "#2f3b4a", raised: "#1b2430" };
+
+function readPalette(): Palette {
+  const style = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+  return {
+    bg: read("--bg", DEFAULT_PALETTE.bg),
+    fg: read("--fg", DEFAULT_PALETTE.fg),
+    muted: read("--muted", DEFAULT_PALETTE.muted),
+    line: read("--line", DEFAULT_PALETTE.line),
+    raised: read("--raised", DEFAULT_PALETTE.raised),
+  };
+}
+
+const nodeSize = (importance: number) => 5 + (importance || 0.5) * 14;
+
+export default function GraphView({ data, highlightIds, selectedId, onSelectEntity }: Props) {
+  const { theme } = useTheme();
+  const [ForceGraph, setForceGraph] = useState<ForceGraphComponent | null>(null);
+  const [palette, setPalette] = useState<Palette>(DEFAULT_PALETTE);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [hoverId, setHoverId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 800, height: 500 });
-  const [hoverNode, setHoverNode] = useState<string | null>(null);
+  const graphRef = useRef<any>(undefined);
+  const nodeCache = useRef(new Map<string, GraphNode>());
+
+  useEffect(() => {
+    let live = true;
+    import("react-force-graph-2d").then((m) => {
+      if (live) setForceGraph(() => m.default as ForceGraphComponent);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setPalette(readPalette());
+  }, [theme]);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const obs = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect;
-      setDimensions({ width, height: Math.max(height, 400) });
+    const observer = new ResizeObserver(([entry]) => {
+      setSize({ width: Math.floor(entry.contentRect.width), height: Math.floor(entry.contentRect.height) });
     });
-    obs.observe(el);
-    return () => obs.disconnect();
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
+  // Node objects are reused across reloads so the layout does not jump.
+  const graph = useMemo(() => {
+    const cache = nodeCache.current;
+    const seen = new Set<string>();
+    const nodes: GraphNode[] = (data?.entities ?? []).map((e) => {
+      seen.add(e.id);
+      const fields = {
+        id: e.id,
+        name: e.name,
+        entity_type: e.entity_type,
+        importance: e.importance,
+        observation_count: e.observation_count,
+        color: entityColor(e.entity_type),
+      };
+      const existing = cache.get(e.id);
+      if (existing) return Object.assign(existing, fields);
+      const node: GraphNode = fields;
+      cache.set(e.id, node);
+      return node;
+    });
+    for (const id of cache.keys()) if (!seen.has(id)) cache.delete(id);
+
+    const links: GraphLink[] = (data?.relations ?? [])
+      .filter((r) => seen.has(r.source_id) && seen.has(r.target_id))
+      .map((r) => ({ source: r.source_id, target: r.target_id, relation_type: r.relation_type, weight: r.weight }));
+    return { nodes, links };
+  }, [data]);
+
+  const ready = ForceGraph !== null && size.width > 0 && size.height > 0 && graph.nodes.length > 0;
   useEffect(() => {
-    if (!data) return;
-
-    const nodes: GraphNode[] = data.entities.map((e: Entity) => ({
-      id: e.id,
-      name: e.name,
-      entity_type: e.entity_type,
-      importance: e.importance,
-      observation_count: e.observation_count,
-      color: ENTITY_COLORS[e.entity_type] || "#6b7280",
-      highlighted: highlightIds.size === 0 || highlightIds.has(e.id),
-    }));
-
-    const nodeIds = new Set(nodes.map((n) => n.id));
-    const links: GraphLink[] = data.relations
-      .filter(
-        (r: Relation) => nodeIds.has(r.source_id) && nodeIds.has(r.target_id)
-      )
-      .map((r: Relation) => ({
-        source: r.source_id,
-        target: r.target_id,
-        relation_type: r.relation_type,
-        weight: r.weight,
-      }));
-
-    setGraphData({ nodes, links });
-  }, [data, highlightIds]);
-
-  const nodeCanvasObject = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (node: any, ctx: CanvasRenderingContext2D) => {
-      const x = node.x as number;
-      const y = node.y as number;
-      if (!isFinite(x) || !isFinite(y)) return;
-      const size = 5 + (node.importance || 0.5) * 14;
-      const isHighlighted = node.highlighted !== false;
-      const isHovered = hoverNode === node.id;
-      const alpha = isHighlighted ? 1 : 0.15;
-
-      ctx.globalAlpha = alpha;
-
-      // Glow effect for hovered/highlighted nodes
-      if (isHovered || (isHighlighted && highlightIds.size > 0 && highlightIds.has(node.id))) {
-        ctx.beginPath();
-        ctx.arc(x, y, size + 6, 0, 2 * Math.PI);
-        const gradient = ctx.createRadialGradient(x, y, size, x, y, size + 6);
-        gradient.addColorStop(0, node.color + "60");
-        gradient.addColorStop(1, node.color + "00");
-        ctx.fillStyle = gradient;
-        ctx.fill();
+    const fg = graphRef.current;
+    if (!ready || !fg) return;
+    fg.d3Force("charge")?.strength(-260).distanceMax(450);
+    fg.d3Force("link")?.distance(100);
+    // Keeps unlinked nodes from drifting away from the cluster.
+    fg.d3Force("gravity", (alpha: number) => {
+      for (const n of graph.nodes) {
+        if (n.x === undefined || n.y === undefined) continue;
+        const v = n as GraphNode & { vx?: number; vy?: number };
+        v.vx = (v.vx ?? 0) - n.x * 0.08 * alpha;
+        v.vy = (v.vy ?? 0) - n.y * 0.08 * alpha;
       }
+    });
+    fg.d3ReheatSimulation();
+  }, [ready, graph]);
 
-      // Node circle with gradient fill
+  const fitView = useCallback(() => {
+    const fg = graphRef.current;
+    if (!fg) return;
+    const xs = graph.nodes.map((n) => n.x).filter((v): v is number => v !== undefined && isFinite(v));
+    const ys = graph.nodes.map((n) => n.y).filter((v): v is number => v !== undefined && isFinite(v));
+    if (xs.length === 0) return;
+    const spanX = Math.max(...xs) - Math.min(...xs);
+    const spanY = Math.max(...ys) - Math.min(...ys);
+    // zoomToFit has no zoom ceiling, so a lone node would fill the screen.
+    if (Math.max(spanX, spanY) < 80) {
+      fg.centerAt((Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2, 300);
+      fg.zoom(1.5, 300);
+    } else {
+      fg.zoomToFit(300, 48);
+    }
+  }, [graph]);
+
+  const drawNode = useCallback(
+    (node: GraphNode, ctx: CanvasRenderingContext2D, scale: number) => {
+      const { x, y } = node;
+      if (x === undefined || y === undefined || !isFinite(x) || !isFinite(y)) return;
+      const r = nodeSize(node.importance);
+      const active = highlightIds.size === 0 || highlightIds.has(node.id);
+      const hovered = hoverId === node.id;
+      const selected = selectedId === node.id;
+
+      ctx.globalAlpha = active ? 1 : 0.18;
+
       ctx.beginPath();
-      ctx.arc(x, y, size, 0, 2 * Math.PI);
-      const grad = ctx.createRadialGradient(x - size * 0.3, y - size * 0.3, 0, x, y, size);
-      grad.addColorStop(0, node.color + "ff");
-      grad.addColorStop(1, node.color + "aa");
-      ctx.fillStyle = grad;
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = node.color;
       ctx.fill();
-
-      // Border
-      ctx.strokeStyle = isHovered ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.2)";
-      ctx.lineWidth = isHovered ? 1.5 : 0.5;
+      ctx.lineWidth = selected || hovered ? 2 : 0.75;
+      ctx.strokeStyle = selected || hovered ? palette.fg : palette.line;
       ctx.stroke();
 
-      // Observation count badge
-      if (node.observation_count > 0) {
-        const badgeX = x + size * 0.7;
-        const badgeY = y - size * 0.7;
-        const badgeR = 5;
+      if (highlightIds.size > 0 && active) {
         ctx.beginPath();
-        ctx.arc(badgeX, badgeY, badgeR, 0, 2 * Math.PI);
-        ctx.fillStyle = "#1e293b";
-        ctx.fill();
+        ctx.arc(x, y, r + 4, 0, 2 * Math.PI);
+        ctx.lineWidth = 1.5;
         ctx.strokeStyle = node.color;
-        ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.font = "7px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "#fff";
-        ctx.fillText(String(node.observation_count), badgeX, badgeY);
       }
 
-      // Label
-      const fontSize = Math.max(10, Math.min(13, size * 0.9));
-      ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+      if (node.observation_count > 0) {
+        const bx = x + r * 0.7;
+        const by = y - r * 0.7;
+        ctx.beginPath();
+        ctx.arc(bx, by, 5.5, 0, 2 * Math.PI);
+        ctx.fillStyle = palette.raised;
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = node.color;
+        ctx.stroke();
+        ctx.font = `${7 / Math.max(scale, 0.6)}px ${FONT}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = palette.fg;
+        ctx.fillText(String(node.observation_count), bx, by);
+      }
+
+      const fontSize = 12 / scale;
+      ctx.font = `${fontSize}px ${FONT}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      ctx.fillStyle = isHovered ? "#ffffff" : "rgba(255,255,255,0.85)";
-      ctx.fillText(node.name, x, y + size + 3);
-
-      // Type label (smaller, below name)
-      if (isHovered) {
-        ctx.font = "9px Inter, system-ui, sans-serif";
-        ctx.fillStyle = node.color + "cc";
-        ctx.fillText(node.entity_type, x, y + size + 3 + fontSize + 2);
+      ctx.fillStyle = palette.fg;
+      ctx.fillText(node.name, x, y + r + 3 / scale);
+      if (hovered) {
+        ctx.font = `${10 / scale}px ${FONT}`;
+        ctx.fillStyle = palette.muted;
+        ctx.fillText(node.entity_type, x, y + r + 3 / scale + fontSize + 2 / scale);
       }
 
       ctx.globalAlpha = 1;
     },
-    [hoverNode, highlightIds]
+    [highlightIds, hoverId, selectedId, palette],
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const linkCanvasObject = useCallback((link: any, ctx: CanvasRenderingContext2D) => {
-    const start = link.source;
-    const end = link.target;
-    if (!start || !end || typeof start.x !== "number") return;
+  const drawLink = useCallback(
+    (link: any, ctx: CanvasRenderingContext2D, scale: number) => {
+      const start = link.source;
+      const end = link.target;
+      if (!start || !end || typeof start.x !== "number" || typeof end.x !== "number") return;
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist === 0) return;
 
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist === 0) return;
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(end.x, end.y);
+      ctx.strokeStyle = palette.line;
+      ctx.lineWidth = Math.min(3, Math.max(0.75, (link.weight || 1) * 0.8));
+      ctx.stroke();
 
-    // Draw link line
-    ctx.beginPath();
-    ctx.moveTo(start.x, start.y);
-    ctx.lineTo(end.x, end.y);
-    ctx.strokeStyle = "rgba(100, 116, 139, 0.3)";
-    ctx.lineWidth = Math.max(0.5, (link.weight || 1) * 0.8);
-    ctx.stroke();
+      // Arrow stops at the target node's edge.
+      const angle = Math.atan2(dy, dx);
+      const tip = Math.max(0, dist - nodeSize(end.importance) - 2);
+      const ax = start.x + Math.cos(angle) * tip;
+      const ay = start.y + Math.sin(angle) * tip;
+      const len = 6;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax - len * Math.cos(angle - Math.PI / 6), ay - len * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(ax - len * Math.cos(angle + Math.PI / 6), ay - len * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fillStyle = palette.muted;
+      ctx.fill();
 
-    // Arrow
-    const arrowLen = 5;
-    const arrowPos = 0.85;
-    const ax = start.x + dx * arrowPos;
-    const ay = start.y + dy * arrowPos;
-    const angle = Math.atan2(dy, dx);
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(
-      ax - arrowLen * Math.cos(angle - Math.PI / 6),
-      ay - arrowLen * Math.sin(angle - Math.PI / 6)
-    );
-    ctx.lineTo(
-      ax - arrowLen * Math.cos(angle + Math.PI / 6),
-      ay - arrowLen * Math.sin(angle + Math.PI / 6)
-    );
-    ctx.fillStyle = "rgba(100, 116, 139, 0.5)";
-    ctx.fill();
-
-    // Relation label at midpoint
-    if (dist > 60) {
-      const mx = start.x + dx * 0.5;
-      const my = start.y + dy * 0.5;
-      ctx.font = "8px Inter, system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = "rgba(148, 163, 184, 0.6)";
-      // Rotate text to align with link
-      ctx.save();
-      ctx.translate(mx, my);
-      let textAngle = angle;
-      if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
-        textAngle += Math.PI;
+      if (dist > 70) {
+        ctx.save();
+        ctx.translate(start.x + dx / 2, start.y + dy / 2);
+        let textAngle = angle;
+        if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) textAngle += Math.PI;
+        ctx.rotate(textAngle);
+        ctx.font = `${9 / scale}px ${FONT}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillStyle = palette.muted;
+        ctx.fillText(String(link.relation_type).replace(/_/g, " "), 0, -2 / scale);
+        ctx.restore();
       }
-      ctx.rotate(textAngle);
-      ctx.fillText(link.relation_type.replace(/_/g, " "), 0, -5);
-      ctx.restore();
-    }
+    },
+    [palette],
+  );
+
+  const paintPointerArea = useCallback((node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {
+    if (node.x === undefined || node.y === undefined || !isFinite(node.x) || !isFinite(node.y)) return;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, nodeSize(node.importance) + 4, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.fill();
   }, []);
 
-  if (!data || data.entities.length === 0) {
-    return (
-      <div
-        ref={containerRef}
-        className="flex items-center justify-center h-full text-gray-500 text-sm"
-      >
-        {data ? "No entities found. Use remember() to add knowledge." : "Loading graph..."}
-      </div>
-    );
-  }
-
-  // Entity type legend
+  const entities = data?.entities ?? [];
   const typeCounts: Record<string, number> = {};
-  for (const e of data.entities) {
-    typeCounts[e.entity_type] = (typeCounts[e.entity_type] || 0) + 1;
-  }
+  for (const e of entities) typeCounts[e.entity_type] = (typeCounts[e.entity_type] ?? 0) + 1;
 
   return (
-    <div ref={containerRef} className="w-full h-full min-h-[400px] relative">
-      {/* Legend */}
-      <div className="absolute top-2 left-2 z-10 bg-gray-900/80 backdrop-blur rounded-lg p-2 space-y-1">
-        {Object.entries(typeCounts).map(([type, count]) => (
-          <div key={type} className="flex items-center gap-2 text-xs">
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0"
-              style={{ backgroundColor: ENTITY_COLORS[type as EntityType] || "#6b7280" }}
-            />
-            <span className="text-gray-400">
-              {ENTITY_TYPE_LABELS[type] || type} ({count})
+    <div className="flex h-full min-h-[320px] w-full flex-col" style={{ background: palette.bg }}>
+      {entities.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line bg-surface px-3 py-2 text-xs">
+          {Object.entries(typeCounts).map(([type, count]) => (
+            <span key={type} className="flex items-center gap-1.5 text-muted">
+              <span className="pill-dot" style={{ backgroundColor: entityColor(type) }} aria-hidden />
+              {TYPE_LABELS[type] ?? type} ({count})
             </span>
-          </div>
-        ))}
+          ))}
+          <span className="ml-auto">
+            <label htmlFor="entity-jump" className="sr-only">
+              Open an entity
+            </label>
+            <select
+              id="entity-jump"
+              value={selectedId ?? ""}
+              onChange={(e) => e.target.value && onSelectEntity(e.target.value)}
+              className="field !w-auto !px-1.5 !py-1 !text-xs"
+            >
+              <option value="">Open an entity…</option>
+              {entities.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name} ({e.entity_type})
+                </option>
+              ))}
+            </select>
+          </span>
+        </div>
+      )}
+      <div ref={containerRef} className="relative min-h-0 flex-1 overflow-hidden">
+        {!data ? (
+          <Message>Loading graph…</Message>
+        ) : entities.length === 0 ? (
+          <Message>No entities in this project yet. They appear when an agent calls the remember tool.</Message>
+        ) : (
+          ForceGraph &&
+          ready && (
+            <ForceGraph
+              ref={graphRef}
+              graphData={graph}
+              width={size.width}
+              height={size.height}
+              backgroundColor={palette.bg}
+              nodeCanvasObject={drawNode}
+              nodePointerAreaPaint={paintPointerArea}
+              linkCanvasObject={drawLink}
+              linkCanvasObjectMode={() => "replace"}
+              onNodeClick={(node: GraphNode) => onSelectEntity(node.id)}
+              onNodeHover={(node: GraphNode | null) => setHoverId(node ? node.id : null)}
+              onEngineStop={fitView}
+              cooldownTicks={200}
+              d3AlphaDecay={0.03}
+              d3VelocityDecay={0.35}
+            />
+          )
+        )}
       </div>
-
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-      <ForceGraph2D
-        graphData={graphData}
-        width={dimensions.width}
-        height={dimensions.height}
-        nodeCanvasObject={nodeCanvasObject as any}
-        nodePointerAreaPaint={((node: any, color: string, ctx: CanvasRenderingContext2D) => {
-          if (!isFinite(node.x) || !isFinite(node.y)) return;
-          const size = 5 + (node.importance || 0.5) * 14;
-          ctx.beginPath();
-          ctx.arc(node.x, node.y, size + 4, 0, 2 * Math.PI);
-          ctx.fillStyle = color;
-          ctx.fill();
-        }) as any}
-        linkCanvasObject={linkCanvasObject as any}
-        linkCanvasObjectMode={() => "replace"}
-        onNodeClick={((node: any) => onSelectEntity(node.id)) as any}
-        onNodeHover={((node: any) => setHoverNode(node?.id || null)) as any}
-        backgroundColor="#030712"
-        cooldownTicks={100}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
-      />
     </div>
   );
+}
+
+function Message({ children }: { children: React.ReactNode }) {
+  return <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">{children}</div>;
 }

@@ -22782,6 +22782,10 @@ var init_store = __esm({
             const similar = this.similarEntities(project, name, id);
             if (similar.length > 0) result.similar_existing = similar;
           }
+          if (added.length > 0) {
+            const suggestions = this.linkSuggestions(project, id, (input.observations ?? []).concat(input.summary ?? ""));
+            if (suggestions.length > 0) result.link_suggestions = suggestions;
+          }
           return result;
         });
       }
@@ -23364,6 +23368,38 @@ var init_store = __esm({
           fold(e.summary ?? ""),
           fold(facts?.facts ?? "")
         );
+      }
+      linkSuggestions(project, entityId, texts) {
+        const haystack = texts.join(" \n ").toLowerCase();
+        if (haystack.trim().length < 4) return [];
+        const linked = new Set(
+          this.db.all(
+            `SELECT CASE WHEN source_id = ? THEN target_id ELSE source_id END AS other
+           FROM relations WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL`,
+            entityId,
+            entityId,
+            entityId
+          ).map((r) => r.other)
+        );
+        const out = [];
+        for (const e of this.db.all(
+          "SELECT id, name FROM entities WHERE project_key IN (?, ?) AND valid_until IS NULL AND id <> ? ORDER BY importance DESC LIMIT 500",
+          project,
+          GLOBAL_PROJECT,
+          entityId
+        )) {
+          const needle = e.name.toLowerCase();
+          if (needle.length < 3 || linked.has(e.id)) continue;
+          const at = haystack.indexOf(needle);
+          if (at < 0) continue;
+          const before = haystack[at - 1];
+          const after = haystack[at + needle.length];
+          const isWord = (c) => c !== void 0 && /[\p{L}\p{N}]/u.test(c);
+          if (isWord(before) || isWord(after)) continue;
+          out.push(e.name);
+          if (out.length === 3) break;
+        }
+        return out;
       }
       similarEntities(project, name, excludeId) {
         const match = ftsQuery(name);

@@ -22,6 +22,7 @@
     ".claude-plugin",
     ".mcp.json",
     "hooks",
+    "!hooks/*.test.tsx",
     "types",
     "README.md",
     "LICENSE"
