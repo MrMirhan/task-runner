@@ -345,3 +345,32 @@ test("facts that name another entity suggest a link until one exists", () => {
   const word = store.upsertEntity({ project: P, name: "Notes", entity_type: "concept", observations: ["Redistribution is unrelated"] });
   assert.equal(word.link_suggestions, undefined);
 });
+
+test("task groups stay with the branch that made them", () => {
+  const { store } = memoryStore();
+  const tasks = [{ title: "a", content: "A" }];
+  store.createTasks({ project: P, task_group: "feature-x", tasks, branch: "feat/x" });
+  store.createTasks({ project: P, task_group: "feature-y", tasks, branch: "feat/y" });
+
+  assert.equal(store.latestGroup(P, "feat/x"), "feature-x");
+  assert.equal(store.latestGroup(P, "feat/y"), "feature-y");
+  assert.equal(store.latestGroup(P, "main"), null);
+  assert.equal(store.latestGroup(P), "feature-y");
+
+  assert.equal((store.nextTask({ project: P, branch: "feat/x" }) as { task_group: string }).task_group, "feature-x");
+  assert.equal(store.digest(P, { branch: "feat/y" }).tasks?.task_group, "feature-y");
+  assert.equal(store.digest(P, { branch: "main" }).tasks, null);
+  // an explicit group name still reaches across branches
+  assert.equal((store.nextTask({ project: P, task_group: "feature-y", branch: "main" }) as { done: boolean }).done, false);
+});
+
+test("every folder a project was seen in maps back to it", () => {
+  const { store } = memoryStore();
+  store.setContext({ project: "extranet", project_path: "/work/extranet" });
+  store.setContext({ project: "extranet", project_path: "/work/extranet-jellyfish" });
+  assert.equal(store.findProjectByPath("/work/extranet"), "extranet");
+  assert.equal(store.findProjectByPath("/work/extranet-jellyfish"), "extranet");
+
+  store.mergeProjects("extranet", "extranet-main");
+  assert.equal(store.findProjectByPath("/work/extranet-jellyfish"), "extranet-main");
+});

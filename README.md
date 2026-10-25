@@ -109,6 +109,17 @@ The project key comes from the first match in this list:
 
 Commit `.task-runner.json` when a team wants one key for everybody.
 
+Worktrees and copies share the project key. A linked `git worktree` (for example an Orca workspace) uses the key of its main checkout. A plain copy of the folder keeps the git remote, so it gets the same key. Every folder a project was seen in is remembered.
+
+What stays separate:
+
+| Thing | How |
+| --- | --- |
+| Session | Each agent session runs its own server process with its own folder and branch. |
+| Worktree or branch | Task groups belong to the branch that made them. `get_next_task` and the panel show only the groups of the current branch. Notes carry a `branch:<name>` tag, and `scope: "branch"` hides a note from other branches. |
+| Project | Entities, facts and notes are shared by every worktree of the project, so a lesson learned in one worktree is there in the next. |
+| You | `scope: "global"` facts show in every project. |
+
 ## Command line
 
 ```bash

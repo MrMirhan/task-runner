@@ -104,6 +104,20 @@ const migrations: Array<(db: Db) => void> = [
       );
     `);
   },
+  (db) => {
+    db.exec(`
+      ALTER TABLE tasks ADD COLUMN branch TEXT;
+
+      CREATE TABLE project_paths (
+        path TEXT PRIMARY KEY,
+        project_key TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+        seen_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_project_paths_project ON project_paths(project_key);
+      INSERT OR IGNORE INTO project_paths (path, project_key, seen_at)
+        SELECT project_path, key, updated_at FROM projects WHERE project_path IS NOT NULL;
+    `);
+  },
 ];
 
 export const SCHEMA_VERSION = migrations.length;

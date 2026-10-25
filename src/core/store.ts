@@ -27,6 +27,7 @@ const ENTITY_COLS =
 
 const EXPORT_COLUMNS: Record<string, string[]> = {
   projects: ["key", "project_path", "project_name", "created_at", "updated_at"],
+  project_paths: ["path", "project_key", "seen_at"],
   entries: ["id", "project_key", "scope", "scope_ref", "type", "title", "content", "tags", "session_id", "created_at"],
   entities: [
     "id", "project_key", "name", "entity_type", "summary", "properties", "importance",
@@ -36,7 +37,7 @@ const EXPORT_COLUMNS: Record<string, string[]> = {
   relations: ["id", "source_id", "target_id", "relation_type", "weight", "context", "created_at", "valid_until"],
   tasks: [
     "project_key", "task_group", "id", "index_num", "title", "content", "status", "result", "error",
-    "system_prompt", "started_at", "completed_at", "execution_time_ms", "result_size", "created_at",
+    "system_prompt", "started_at", "completed_at", "execution_time_ms", "result_size", "created_at", "branch",
   ],
 };
 
@@ -98,18 +99,23 @@ export class Store {
       );
     }
 
-    const samePath = path
-      ? this.db
-          .all<{ key: string }>("SELECT key FROM projects WHERE project_path = ? AND key <> ?", path, project)
-          .map((r) => r.key)
-      : [];
+    let samePath: string[] = [];
+    if (path) {
+      const previous = this.db.get<{ project_key: string }>("SELECT project_key FROM project_paths WHERE path = ?", path);
+      if (previous && previous.project_key !== project) samePath = [previous.project_key];
+      this.db.run(
+        `INSERT INTO project_paths (path, project_key, seen_at) VALUES (?, ?, ?)
+         ON CONFLICT(path) DO UPDATE SET project_key = excluded.project_key, seen_at = excluded.seen_at`,
+        path, project, t,
+      );
+    }
 
     return { project, created: !existing, same_path_projects: samePath };
   }
 
   findProjectByPath(path: string): string | null {
     const row = this.db.get<{ key: string }>(
-      "SELECT key FROM projects WHERE project_path = ? ORDER BY updated_at DESC, rowid DESC LIMIT 1",
+      "SELECT project_key AS key FROM project_paths WHERE path = ?",
       path,
     );
     return row?.key ?? null;
@@ -187,6 +193,7 @@ export class Store {
         this.indexEntity(twin.id);
       }
 
+      this.db.run("UPDATE OR REPLACE project_paths SET project_key = ? WHERE project_key = ?", into, from);
       this.db.run("DELETE FROM projects WHERE key = ?", from);
       this.reindexAll();
       return { merged: from, into, ...moved };
@@ -680,7 +687,7 @@ export class Store {
     return { entity_candidates: entities, entry_candidates: entries, max_age_days: days };
   }
 
-  digest(project: string, limits: { entities?: number; entries?: number } = {}) {
+  digest(project: string, limits: { entities?: number; entries?: number; branch?: string | null } = {}) {
     required(project, "project");
     const pick = (key: string, limit: number): Array<Row & { facts: string[] }> =>
       this.db
@@ -699,7 +706,7 @@ export class Store {
       "SELECT type, title, created_at FROM entries WHERE project_key = ? AND scope = 'project' ORDER BY created_at DESC, seq DESC LIMIT ?",
       project, limits.entries ?? 5,
     );
-    const group = this.latestGroup(project);
+    const group = this.latestGroup(project, limits.branch);
     const tasks = group ? this.taskSummary(project, group) : null;
     return { entities, global_entities: globalEntities, entries, tasks, stats: this.graphStats(project) };
   }
@@ -712,6 +719,7 @@ export class Store {
     tasks: TaskInput[];
     system_prompt?: string | null;
     replace?: boolean;
+    branch?: string | null;
   }) {
     const project = required(input.project, "project");
     const group = required(input.task_group, "task_group");
@@ -735,10 +743,10 @@ export class Store {
       const created = input.tasks.map((task, i) => {
         const id = `task-${String(i + 1).padStart(3, "0")}`;
         this.db.run(
-          `INSERT INTO tasks (project_key, task_group, id, index_num, title, content, system_prompt, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO tasks (project_key, task_group, id, index_num, title, content, system_prompt, created_at, branch)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           project, group, id, i, required(task.title, "task title"), required(task.content, "task content"),
-          input.system_prompt ?? null, t,
+          input.system_prompt ?? null, t, input.branch ?? null,
         );
         return { id, title: task.title, status: "pending" };
       });
@@ -746,8 +754,8 @@ export class Store {
     });
   }
 
-  nextTask(input: { project: string; task_group?: string | null }) {
-    const group = this.groupOrLatest(input.project, input.task_group);
+  nextTask(input: { project: string; task_group?: string | null; branch?: string | null }) {
+    const group = this.groupOrLatest(input.project, input.task_group, input.branch);
     return this.db.transaction(() => {
       const t = this.clock();
       this.db.run(
@@ -810,12 +818,12 @@ export class Store {
     };
   }
 
-  taskStatus(input: { project: string; task_group?: string | null; task_id?: string | null }) {
+  taskStatus(input: { project: string; task_group?: string | null; task_id?: string | null; branch?: string | null }) {
     if (input.task_id) {
       const task = this.findTask(input.project, input.task_id, input.task_group);
       return { task };
     }
-    const group = this.groupOrLatest(input.project, input.task_group);
+    const group = this.groupOrLatest(input.project, input.task_group, input.branch);
     const tasks = this.db.all(
       `SELECT id, title, status, started_at, completed_at, execution_time_ms, result_size, error
        FROM tasks WHERE project_key = ? AND task_group = ? ORDER BY index_num`,
@@ -855,11 +863,22 @@ export class Store {
     return { task_id: t.id, task_group: t.task_group, title: t.title, status: t.status, result: t.result, error: t.error };
   }
 
-  latestGroup(project: string): string | null {
+  /**
+   * The newest task group. With a branch (or null for a detached HEAD) only groups made on that
+   * branch, or on none, count, so two worktrees on different branches never share a task loop.
+   * `undefined` means no branch filter.
+   */
+  latestGroup(project: string, branch?: string | null): string | null {
+    const values: SqlValue[] = [project];
+    let filter = "";
+    if (branch !== undefined) {
+      filter = branch === null ? " AND branch IS NULL" : " AND (branch = ? OR branch IS NULL)";
+      if (branch !== null) values.push(branch);
+    }
     const row = this.db.get<{ task_group: string }>(
-      `SELECT task_group FROM tasks WHERE project_key = ?
+      `SELECT task_group FROM tasks WHERE project_key = ?${filter}
        GROUP BY task_group ORDER BY MAX(created_at) DESC, MAX(rowid) DESC LIMIT 1`,
-      project,
+      ...values,
     );
     return row?.task_group ?? null;
   }
@@ -869,7 +888,7 @@ export class Store {
       `SELECT task_group, COUNT(*) AS total,
               SUM(status = 'completed') AS completed, SUM(status = 'failed') AS failed,
               SUM(status = 'pending') AS pending, SUM(status = 'running') AS running,
-              MIN(created_at) AS created_at
+              MIN(created_at) AS created_at, MIN(branch) AS branch
        FROM tasks WHERE project_key = ? GROUP BY task_group ORDER BY MAX(created_at) DESC, MAX(rowid) DESC`,
       project,
     );
@@ -900,6 +919,10 @@ export class Store {
     const cols = (table: string, alias: string) => EXPORT_COLUMNS[table].map((c) => `${alias}.${c}`).join(", ");
 
     tables.projects = this.db.all(`SELECT ${cols("projects", "p")} FROM projects p${scoped("p.key")}`, ...args);
+    tables.project_paths = this.db.all(
+      `SELECT ${cols("project_paths", "x")} FROM project_paths x${scoped("x.project_key")}`,
+      ...args,
+    );
     tables.entries = this.db.all(`SELECT ${cols("entries", "x")} FROM entries x${scoped("x.project_key")}`, ...args);
     tables.entities = this.db.all(`SELECT ${cols("entities", "x")} FROM entities x${scoped("x.project_key")}`, ...args);
     tables.observations = this.db.all(
@@ -1089,9 +1112,9 @@ export class Store {
     return rows[0];
   }
 
-  private groupOrLatest(project: string, group?: string | null): string {
+  private groupOrLatest(project: string, group?: string | null, branch?: string | null): string {
     if (group) return group;
-    const latest = this.latestGroup(project);
+    const latest = this.latestGroup(project, branch);
     if (!latest) throw new StoreError("not_found", "No task groups found. Call create_task_group first.");
     return latest;
   }

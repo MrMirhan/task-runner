@@ -419,6 +419,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         }
         return store.createTasks({
           project: session.get().project, task_group: slugify(name), tasks: list, system_prompt, replace,
+          branch: session.get().branch ?? null,
         });
       }),
   );
@@ -431,7 +432,10 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: { task_group: z.string().optional().describe("Defaults to the latest group") },
       annotations: { ...WRITE, idempotentHint: false },
     },
-    ({ task_group }) => run(() => store.nextTask({ project: session.get().project, task_group })),
+    ({ task_group }) => run(() => {
+        const s = session.get();
+        return store.nextTask({ project: s.project, task_group, branch: s.branch ?? null });
+      }),
   );
 
   server.registerTool(
@@ -469,9 +473,13 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
     },
     ({ task_group, task_id }) =>
       run(async () => {
-        const project = session.get().project;
+        const s = session.get();
+        const project = s.project;
         if (task_id) return store.taskResult({ project, task_id, task_group });
-        const status = (await store.taskStatus({ project, task_group })) as { task_group: string; tasks: Row[] };
+        const status = (await store.taskStatus({ project, task_group, branch: s.branch ?? null })) as {
+          task_group: string;
+          tasks: Row[];
+        };
         return { summary: await store.taskSummary(project, status.task_group), tasks: status.tasks };
       }),
   );

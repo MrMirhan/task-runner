@@ -22042,7 +22042,8 @@ function registerTools(server, ctx) {
         task_group: slugify(name),
         tasks: list,
         system_prompt,
-        replace
+        replace,
+        branch: session.get().branch ?? null
       });
     })
   );
@@ -22054,7 +22055,10 @@ function registerTools(server, ctx) {
       inputSchema: { task_group: external_exports.string().optional().describe("Defaults to the latest group") },
       annotations: { ...WRITE, idempotentHint: false }
     },
-    ({ task_group }) => run(() => store.nextTask({ project: session.get().project, task_group }))
+    ({ task_group }) => run(() => {
+      const s = session.get();
+      return store.nextTask({ project: s.project, task_group, branch: s.branch ?? null });
+    })
   );
   server.registerTool(
     "complete_task",
@@ -22086,9 +22090,10 @@ function registerTools(server, ctx) {
       annotations: READ
     },
     ({ task_group, task_id }) => run(async () => {
-      const project = session.get().project;
+      const s = session.get();
+      const project = s.project;
       if (task_id) return store.taskResult({ project, task_id, task_group });
-      const status = await store.taskStatus({ project, task_group });
+      const status = await store.taskStatus({ project, task_group, branch: s.branch ?? null });
       return { summary: await store.taskSummary(project, status.task_group), tasks: status.tasks };
     })
   );
@@ -22411,6 +22416,20 @@ var init_schema = __esm({
         tokenize = '${FTS_TOKENIZER}'
       );
     `);
+      },
+      (db) => {
+        db.exec(`
+      ALTER TABLE tasks ADD COLUMN branch TEXT;
+
+      CREATE TABLE project_paths (
+        path TEXT PRIMARY KEY,
+        project_key TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+        seen_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_project_paths_project ON project_paths(project_key);
+      INSERT OR IGNORE INTO project_paths (path, project_key, seen_at)
+        SELECT project_path, key, updated_at FROM projects WHERE project_path IS NOT NULL;
+    `);
       }
     ];
     SCHEMA_VERSION = migrations.length;
@@ -22437,6 +22456,7 @@ var init_store = __esm({
     ENTITY_COLS = "id, project_key, name, entity_type, summary, properties, importance, access_count, last_accessed, created_at, updated_at";
     EXPORT_COLUMNS = {
       projects: ["key", "project_path", "project_name", "created_at", "updated_at"],
+      project_paths: ["path", "project_key", "seen_at"],
       entries: ["id", "project_key", "scope", "scope_ref", "type", "title", "content", "tags", "session_id", "created_at"],
       entities: [
         "id",
@@ -22469,7 +22489,8 @@ var init_store = __esm({
         "completed_at",
         "execution_time_ms",
         "result_size",
-        "created_at"
+        "created_at",
+        "branch"
       ]
     };
     Store = class {
@@ -22505,12 +22526,23 @@ var init_store = __esm({
             t
           );
         }
-        const samePath = path ? this.db.all("SELECT key FROM projects WHERE project_path = ? AND key <> ?", path, project).map((r) => r.key) : [];
+        let samePath = [];
+        if (path) {
+          const previous = this.db.get("SELECT project_key FROM project_paths WHERE path = ?", path);
+          if (previous && previous.project_key !== project) samePath = [previous.project_key];
+          this.db.run(
+            `INSERT INTO project_paths (path, project_key, seen_at) VALUES (?, ?, ?)
+         ON CONFLICT(path) DO UPDATE SET project_key = excluded.project_key, seen_at = excluded.seen_at`,
+            path,
+            project,
+            t
+          );
+        }
         return { project, created: !existing, same_path_projects: samePath };
       }
       findProjectByPath(path) {
         const row = this.db.get(
-          "SELECT key FROM projects WHERE project_path = ? ORDER BY updated_at DESC, rowid DESC LIMIT 1",
+          "SELECT project_key AS key FROM project_paths WHERE path = ?",
           path
         );
         return row?.key ?? null;
@@ -22589,6 +22621,7 @@ var init_store = __esm({
             moved.merged_entities++;
             this.indexEntity(twin.id);
           }
+          this.db.run("UPDATE OR REPLACE project_paths SET project_key = ? WHERE project_key = ?", into, from);
           this.db.run("DELETE FROM projects WHERE key = ?", from);
           this.reindexAll();
           return { merged: from, into, ...moved };
@@ -23091,7 +23124,7 @@ var init_store = __esm({
           project,
           limits.entries ?? 5
         );
-        const group = this.latestGroup(project);
+        const group = this.latestGroup(project, limits.branch);
         const tasks = group ? this.taskSummary(project, group) : null;
         return { entities, global_entities: globalEntities, entries, tasks, stats: this.graphStats(project) };
       }
@@ -23118,8 +23151,8 @@ var init_store = __esm({
           const created = input.tasks.map((task, i) => {
             const id = `task-${String(i + 1).padStart(3, "0")}`;
             this.db.run(
-              `INSERT INTO tasks (project_key, task_group, id, index_num, title, content, system_prompt, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO tasks (project_key, task_group, id, index_num, title, content, system_prompt, created_at, branch)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               project,
               group,
               id,
@@ -23127,7 +23160,8 @@ var init_store = __esm({
               required2(task.title, "task title"),
               required2(task.content, "task content"),
               input.system_prompt ?? null,
-              t
+              t,
+              input.branch ?? null
             );
             return { id, title: task.title, status: "pending" };
           });
@@ -23135,7 +23169,7 @@ var init_store = __esm({
         });
       }
       nextTask(input) {
-        const group = this.groupOrLatest(input.project, input.task_group);
+        const group = this.groupOrLatest(input.project, input.task_group, input.branch);
         return this.db.transaction(() => {
           const t = this.clock();
           this.db.run(
@@ -23214,7 +23248,7 @@ var init_store = __esm({
           const task = this.findTask(input.project, input.task_id, input.task_group);
           return { task };
         }
-        const group = this.groupOrLatest(input.project, input.task_group);
+        const group = this.groupOrLatest(input.project, input.task_group, input.branch);
         const tasks = this.db.all(
           `SELECT id, title, status, started_at, completed_at, execution_time_ms, result_size, error
        FROM tasks WHERE project_key = ? AND task_group = ? ORDER BY index_num`,
@@ -23254,11 +23288,22 @@ var init_store = __esm({
         const t = this.findTask(input.project, input.task_id, input.task_group);
         return { task_id: t.id, task_group: t.task_group, title: t.title, status: t.status, result: t.result, error: t.error };
       }
-      latestGroup(project) {
+      /**
+       * The newest task group. With a branch (or null for a detached HEAD) only groups made on that
+       * branch, or on none, count, so two worktrees on different branches never share a task loop.
+       * `undefined` means no branch filter.
+       */
+      latestGroup(project, branch) {
+        const values = [project];
+        let filter = "";
+        if (branch !== void 0) {
+          filter = branch === null ? " AND branch IS NULL" : " AND (branch = ? OR branch IS NULL)";
+          if (branch !== null) values.push(branch);
+        }
         const row = this.db.get(
-          `SELECT task_group FROM tasks WHERE project_key = ?
+          `SELECT task_group FROM tasks WHERE project_key = ?${filter}
        GROUP BY task_group ORDER BY MAX(created_at) DESC, MAX(rowid) DESC LIMIT 1`,
-          project
+          ...values
         );
         return row?.task_group ?? null;
       }
@@ -23267,7 +23312,7 @@ var init_store = __esm({
           `SELECT task_group, COUNT(*) AS total,
               SUM(status = 'completed') AS completed, SUM(status = 'failed') AS failed,
               SUM(status = 'pending') AS pending, SUM(status = 'running') AS running,
-              MIN(created_at) AS created_at
+              MIN(created_at) AS created_at, MIN(branch) AS branch
        FROM tasks WHERE project_key = ? GROUP BY task_group ORDER BY MAX(created_at) DESC, MAX(rowid) DESC`,
           project
         );
@@ -23292,6 +23337,10 @@ var init_store = __esm({
         const args = project ? [project] : [];
         const cols = (table, alias) => EXPORT_COLUMNS[table].map((c) => `${alias}.${c}`).join(", ");
         tables.projects = this.db.all(`SELECT ${cols("projects", "p")} FROM projects p${scoped("p.key")}`, ...args);
+        tables.project_paths = this.db.all(
+          `SELECT ${cols("project_paths", "x")} FROM project_paths x${scoped("x.project_key")}`,
+          ...args
+        );
         tables.entries = this.db.all(`SELECT ${cols("entries", "x")} FROM entries x${scoped("x.project_key")}`, ...args);
         tables.entities = this.db.all(`SELECT ${cols("entities", "x")} FROM entities x${scoped("x.project_key")}`, ...args);
         tables.observations = this.db.all(
@@ -23479,9 +23528,9 @@ var init_store = __esm({
         }
         return rows[0];
       }
-      groupOrLatest(project, group) {
+      groupOrLatest(project, group, branch) {
         if (group) return group;
-        const latest = this.latestGroup(project);
+        const latest = this.latestGroup(project, branch);
         if (!latest) throw new StoreError("not_found", "No task groups found. Call create_task_group first.");
         return latest;
       }
@@ -23721,7 +23770,7 @@ function hookSessionStart() {
   try {
     const { store, db } = openStore();
     const detected = projectFor(store, cwd);
-    const { context, status } = formatDigest(detected, store.digest(detected.project));
+    const { context, status } = formatDigest(detected, store.digest(detected.project, { branch: detected.branch }));
     db.close();
     output = {
       hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context },
@@ -23747,7 +23796,7 @@ function snapshot(args) {
 `);
     return;
   }
-  const group = store.latestGroup(project);
+  const group = store.latestGroup(project, detected.branch);
   const tasks = group ? { summary: store.taskSummary(project, group), items: store.taskStatus({ project, task_group: group }).tasks } : null;
   const graph = store.graphAll(project);
   const out = {

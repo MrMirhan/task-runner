@@ -62,7 +62,7 @@ export function hookSessionStart(): void {
   try {
     const { store, db } = openStore();
     const detected = projectFor(store, cwd);
-    const { context, status } = formatDigest(detected, store.digest(detected.project));
+    const { context, status } = formatDigest(detected, store.digest(detected.project, { branch: detected.branch }));
     db.close();
     output = {
       hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context },
@@ -92,7 +92,7 @@ export function snapshot(args: string[]): void {
     return;
   }
 
-  const group = store.latestGroup(project);
+  const group = store.latestGroup(project, detected.branch);
   const tasks = group
     ? { summary: store.taskSummary(project, group), items: (store.taskStatus({ project, task_group: group }) as { tasks: unknown[] }).tasks }
     : null;
