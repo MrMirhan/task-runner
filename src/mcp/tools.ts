@@ -425,7 +425,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       {
         title: "User rules",
         description:
-          "The user's standing rules for this project, organization and device, as injected at session start. action 'show' returns them. action 'propose' suggests a new or changed rule when the user states a lasting preference or corrects you more than once; it only queues a proposal, and the user approves it in the panel, the web page or the CLI. Never propose secrets, one-off instructions or things the code already shows.",
+          "The user's standing rules for this project, organization and device, as injected at session start. action 'show' returns them. action 'propose' queues a rule the user explicitly asked to make standing; the user approves it in the panel, the web page or the CLI. Preferences you pick up from the conversation go to the taste tool instead. Never propose secrets or one-off instructions.",
         inputSchema: {
           action: z.enum(["show", "propose"]),
           scope: z.enum(["global", "device", "org", "project", "project_device"]).optional().describe("For propose. global: everywhere. device: this machine. org: the organization of this repo. project: this project. project_device: this project on this machine."),
@@ -456,6 +456,49 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         }),
     );
   }
+
+  server.registerTool(
+    "taste",
+    {
+      title: "Learned preferences",
+      description:
+        "How the user wants things, learned from what they said: style, workflow, wording, tools. They are injected at session start and apply at once, with no approval. action 'show' lists them with ids. action 'learn' records what a message taught: 'new' for a wish not seen before, 'reinforce' when they say an existing one again, 'refine' when they adjust it, 'replace' when they now want something different on the same point, 'drop' when they take it back. Write each rule as a general, short instruction (one step more general than the message, never their words as a log). scope 'global' for how they work everywhere, 'org' for this organization, 'project' for this codebase. In Claude Code the panel learns these by itself; call learn when the user asks you to remember how they want something. Never store secrets or people's private data.",
+      inputSchema: {
+        action: z.enum(["show", "learn", "forget"]),
+        items: z
+          .array(
+            z.object({
+              action: z.enum(["new", "reinforce", "refine", "replace", "drop"]).optional(),
+              id: z.string().optional().describe("The existing preference, for reinforce, refine, replace and drop"),
+              scope: z.enum(["global", "org", "project"]).optional(),
+              area: z.string().max(40).optional().describe("A short topic: workflow, commits, replies, ui, testing..."),
+              rule: z.string().max(300).optional(),
+            }),
+          )
+          .max(20)
+          .optional()
+          .describe("For learn"),
+        id: z.string().optional().describe("For forget"),
+      },
+      annotations: WRITE,
+    },
+    ({ action, items, id }) =>
+      run(async () => {
+        const s = await session.get();
+        if (action === "forget") {
+          if (!id) throw new StoreError("invalid", "forget needs id");
+          return store.tasteForget(id);
+        }
+        if (action === "learn") {
+          if (!items?.length) throw new StoreError("invalid", "learn needs items");
+          return store.tasteLearn({ project: s.project, org: s.org, source: "agent", items });
+        }
+        const rows = await store.tasteList({ project: s.project, org: s.org });
+        return {
+          preferences: rows.map((r) => ({ id: r.id, scope: r.scope, area: r.area, rule: r.rule, confidence: r.confidence, hits: r.hits })),
+        };
+      }),
+  );
 
   if (ctx.worklog) {
     const worklog = ctx.worklog;

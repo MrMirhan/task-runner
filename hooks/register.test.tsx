@@ -435,3 +435,98 @@ test('a long list pages inside the pane and the tabs stay in view', async ($, on
   expect(await ui.find({ type: 'Text', text: /Note number 0$/ })).toBeUndefined()
   await ui.unmount()
 })
+
+const PREFS = {
+  preferences: [
+    { id: 'taste_1', scope: 'global', ref: '', area: 'replies', rule: 'Answer in Turkish.', confidence: 0.75, hits: 2, replaced: null },
+  ],
+}
+
+function stubTaste(on: TestOn, forks: string[], learnCalls: string[][], reply = '{"items":[{"action":"new","scope":"global","area":"commits","rule":"Use one-line commit messages."}]}') {
+  base(on)
+  on('ui.log', () => ({ value: undefined }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('command.register', () => ({ value: { command: 'stub' } }))
+  on('tool.call', () => ({ result: 'ok' }))
+  on('turn.complete', () => ({ text: '' }))
+  on('model.fork', (_, e) => {
+    forks.push(e.prompt)
+    return { value: { isAnswered: true, text: reply, usage: { input_tokens: 1, output_tokens: 1 } } as never }
+  })
+  on('process.run', (_, e) => {
+    const argv = [...e.argv]
+    let out: unknown = SNAPSHOT
+    if (argv.includes('taste') && argv.includes('learn')) {
+      learnCalls.push(argv)
+      out = { learned: [{ id: 'taste_2', action: 'new', rule: 'Use one-line commit messages.', confidence: 0.5 }] }
+    } else if (argv.includes('taste')) out = PREFS
+    else if (argv.includes('session')) out = SESSION
+    return { value: { exitCode: 0, stdout: JSON.stringify(out), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+}
+
+const settle = async () => {
+  for (let i = 0; i < 200; i++) await Promise.resolve()
+}
+
+test('a preference said in a prompt is learned after the turn and told to the agent with the next prompt', async ($, on) => {
+  const forks: string[] = []
+  const learnCalls: string[][] = []
+  stubTaste(on, forks, learnCalls)
+  let submitted = null as { context?: readonly string[] } | null
+  on('prompt.submit', (_, e) => {
+    submitted = e
+    return { text: e.text }
+  })
+
+  await submit($, 'commit mesajları hep tek satır olsun, body yazma')
+  await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false, reason: 'answer' })
+  await settle()
+
+  expect(forks.length).toBe(1)
+  expect(forks[0]).toContain('commit mesajları hep tek satır olsun')
+  expect(learnCalls.length).toBe(1)
+  expect(learnCalls[0]!.join(' ')).toContain('Use one-line commit messages.')
+
+  await submit($, 'devam et')
+  expect(submitted?.context?.some(c => /Learned from the user[\s\S]*Use one-line commit messages\./.test(c))).toBe(true)
+  await submit($, 'tamam')
+  expect(submitted?.context).toBeUndefined()
+})
+
+test('a prompt without a preference costs no model call', async ($, on) => {
+  const forks: string[] = []
+  stubTaste(on, forks, [])
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await submit($, 'run the build')
+  await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false, reason: 'answer' })
+  await settle()
+  expect(forks.length).toBe(0)
+})
+
+test('/taste off stops learning for the session and /taste on reads what was said so far', async ($, on) => {
+  const forks: string[] = []
+  stubTaste(on, forks, [])
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+
+  expect((await run($, 'taste', 'off')).text).toMatch(/off for this session/)
+  await submit($, 'never use emojis in replies')
+  await $.turn.complete({ turnId: 't1', answer: '', durationMs: 1, isAborted: false, reason: 'answer' })
+  await settle()
+  expect(forks.length).toBe(0)
+
+  expect((await run($, 'taste', 'on')).text).toMatch(/on for this session\. From the messages so far: 1/)
+  expect(forks[0]).toContain('every message the user wrote in this conversation')
+  expect((await run($, 'taste', '')).text).toContain('Learning is on')
+})
+
+test('the Taste tab lists what was learned and can turn learning off', async ($, on) => {
+  stubTaste(on, [], [])
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'refresh' })
+  await ui.press({ key: 'tab-taste' })
+  expect(await ui.find({ type: 'Text', text: /replies Answer in Turkish\. 2× · everywhere/ })).toBeDefined()
+  await ui.press({ key: 'taste-toggle' })
+  expect(await ui.find({ type: 'Text', text: /Learning is off in this session/ })).toBeDefined()
+  await ui.unmount()
+})

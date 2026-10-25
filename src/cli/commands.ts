@@ -8,6 +8,7 @@ import { openBackend } from "../node/backend.ts";
 import { resolveProject } from "../node/project.ts";
 import { defaultDbPath } from "../node/sqlite.ts";
 import { deviceInfo, resolveForHook } from "../node/remote.ts";
+import { formatTaste } from "../core/taste.ts";
 import { formatDigest } from "./digest.ts";
 
 export function flag(args: string[], name: string): string | undefined {
@@ -60,6 +61,8 @@ export async function hookSessionStart(): Promise<void> {
     const device = deviceInfo();
     if (backend.mode === "local") await backend.rules.registerDevice(device);
     const rules = await resolveForHook(backend.rules, { project: detected.project, org: detected.org, device: device.id });
+    // A server from before taste existed has no such method; the session still starts.
+    const taste = formatTaste(await Promise.resolve().then(() => store.tasteList({ project: detected.project, org: detected.org })).catch(() => []));
     backend.close();
 
     const rulesNote = rules.text
@@ -71,7 +74,7 @@ export async function hookSessionStart(): Promise<void> {
     output = {
       hookSpecificOutput: {
         hookEventName: "SessionStart",
-        additionalContext: [rules.text ? rules.text + staleLine : "", context].filter(Boolean).join("\n\n"),
+        additionalContext: [rules.text ? rules.text + staleLine : "", taste, context].filter(Boolean).join("\n\n"),
       },
       systemMessage: status + rulesNote + pending,
     };

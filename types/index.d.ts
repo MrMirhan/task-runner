@@ -1,4 +1,4 @@
-export type Tab = 'session' | 'tasks' | 'notes' | 'graph' | 'search' | 'time' | 'rules'
+export type Tab = 'session' | 'taste' | 'tasks' | 'notes' | 'graph' | 'search' | 'time' | 'rules'
 
 export type TaskRow = {
   id: string
@@ -99,6 +99,17 @@ export type SessionView = {
   notes: Array<{ id: string; type: string; title: string; created_at: number }>
 }
 
+export type TastePreference = {
+  id: string
+  scope: 'global' | 'org' | 'project'
+  ref: string
+  area: string
+  rule: string
+  confidence: number
+  hits: number
+  replaced: string | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'task-runner': {
@@ -110,6 +121,9 @@ declare module 'claude-code' {
       rules: RulesView | null
       session: SessionView | null
       commits: string[]
+      taste: TastePreference[] | null
+      tasteMode: 'on' | 'off' | null
+      tasteNote: string[]
     }
   }
 }

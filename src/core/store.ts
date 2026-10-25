@@ -36,6 +36,7 @@ const EXPORT_COLUMNS: Record<string, string[]> = {
   ],
   observations: ["id", "entity_id", "content", "source", "confidence", "created_at", "valid_until", "superseded_by"],
   relations: ["id", "source_id", "target_id", "relation_type", "weight", "context", "created_at", "valid_until"],
+  taste: ["id", "scope", "ref", "area", "rule", "confidence", "hits", "replaced", "source", "created_at", "updated_at", "valid_until"],
   tasks: [
     "project_key", "task_group", "id", "index_num", "title", "content", "status", "result", "error",
     "system_prompt", "started_at", "completed_at", "execution_time_ms", "result_size", "created_at", "branch",
@@ -53,6 +54,37 @@ export interface UpsertResult {
   auto_linked?: string[];
   /** Facts already stored that look like the same statement with other numbers or words. */
   possible_conflicts?: Array<{ id: string; text: string }>;
+}
+
+export interface TasteRow {
+  id: string;
+  scope: "global" | "org" | "project";
+  ref: string;
+  area: string;
+  rule: string;
+  confidence: number;
+  hits: number;
+  replaced: string | null;
+  source: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface TasteInput {
+  /** new: a wish not seen before. reinforce: said again. refine: adjusts an existing one. replace: a different wish on the same point. drop: the user takes it back. */
+  action?: "new" | "reinforce" | "refine" | "replace" | "drop";
+  /** The existing preference this message is about, when there is one. */
+  id?: string;
+  scope?: "global" | "org" | "project";
+  area?: string;
+  rule?: string;
+}
+
+function overlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let same = 0;
+  for (const w of a) if (b.has(w)) same++;
+  return same / Math.min(a.size, b.size);
 }
 
 export interface ExportData {
@@ -1100,6 +1132,95 @@ export class Store {
     });
   }
 
+  // ─── Taste: preferences learned from what the user says ───
+
+  /** The learned preferences that apply to a project: the user's own, the organization's and the project's. */
+  tasteList(input: { project: string; org?: string | null }) {
+    const project = required(input.project, "project");
+    return this.db.all<TasteRow>(
+      `SELECT id, scope, ref, area, rule, confidence, hits, replaced, source, created_at, updated_at FROM taste
+       WHERE valid_until IS NULL AND ((scope = 'global') OR (scope = 'org' AND ref = ?) OR (scope = 'project' AND ref = ?))
+       ORDER BY confidence DESC, updated_at DESC`,
+      input.org ?? "\u0000", project,
+    );
+  }
+
+  /**
+   * Applies what one message taught. Nothing waits for approval: a preference counts from the first time it is said,
+   * saying it again makes it firmer, and a different wish on the same point replaces it.
+   */
+  tasteLearn(input: { project: string; org?: string | null; source?: string; items: TasteInput[] }) {
+    const project = required(input.project, "project");
+    const t = this.clock();
+    const out: Array<{ id: string; action: string; rule: string; confidence: number }> = [];
+    this.db.transaction(() => {
+      for (const item of input.items ?? []) {
+        const action = item.action ?? "new";
+        const scope = item.scope === "global" ? "global" : item.scope === "org" && input.org ? "org" : "project";
+        const ref = scope === "global" ? "" : scope === "org" ? String(input.org) : project;
+        const area = (item.area ?? "general").trim().toLowerCase().slice(0, 40) || "general";
+        const rule = (item.rule ?? "").trim().slice(0, 300);
+        let existing = item.id
+          ? this.db.get<TasteRow>("SELECT * FROM taste WHERE id = ? AND valid_until IS NULL", item.id)
+          : undefined;
+        if (!existing && rule && (action === "new" || action === "reinforce")) {
+          // The same wish said in other words is the same preference.
+          const words = wordSet(rule);
+          existing = this.db
+            .all<TasteRow>("SELECT * FROM taste WHERE scope = ? AND ref = ? AND valid_until IS NULL", scope, ref)
+            .find((r) => overlap(words, wordSet(r.rule)) >= 0.7);
+        }
+
+        if (action === "drop") {
+          if (existing) {
+            this.db.run("UPDATE taste SET valid_until = ?, updated_at = ? WHERE id = ?", t, t, existing.id);
+            out.push({ id: existing.id, action, rule: existing.rule, confidence: 0 });
+          }
+          continue;
+        }
+        if (!rule && !existing) continue;
+
+        if (existing && action === "replace") {
+          this.db.run("UPDATE taste SET valid_until = ?, updated_at = ? WHERE id = ?", t, t, existing.id);
+          const id = newId("taste");
+          const confidence = 0.6;
+          this.db.run(
+            `INSERT INTO taste (id, scope, ref, area, rule, confidence, hits, replaced, source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+            id, existing.scope, existing.ref, area, rule || existing.rule, confidence, existing.rule, input.source ?? "prompt", t, t,
+          );
+          out.push({ id, action, rule: rule || existing.rule, confidence });
+        } else if (existing) {
+          // Repeating it makes it firm quickly; a refinement adjusts the words and adds a little.
+          const gain = action === "refine" ? 0.25 : 0.5;
+          const confidence = Number(Math.min(0.99, existing.confidence + (1 - existing.confidence) * gain).toFixed(3));
+          this.db.run(
+            "UPDATE taste SET rule = ?, area = ?, confidence = ?, hits = hits + 1, updated_at = ? WHERE id = ?",
+            rule || existing.rule, item.area ? area : existing.area, confidence, t, existing.id,
+          );
+          out.push({ id: existing.id, action: action === "refine" ? "refine" : "reinforce", rule: rule || existing.rule, confidence });
+        } else {
+          const id = newId("taste");
+          this.db.run(
+            `INSERT INTO taste (id, scope, ref, area, rule, confidence, hits, source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 0.5, 1, ?, ?, ?)`,
+            id, scope, ref, area, rule, input.source ?? "prompt", t, t,
+          );
+          out.push({ id, action: "new", rule, confidence: 0.5 });
+        }
+      }
+    });
+    return { learned: out };
+  }
+
+  tasteForget(id: string) {
+    const t = this.clock();
+    const row = this.db.get<{ id: string }>("SELECT id FROM taste WHERE id = ? AND valid_until IS NULL", required(id, "id"));
+    if (!row) throw new StoreError("not_found", `No preference '${id}'`);
+    this.db.run("UPDATE taste SET valid_until = ?, updated_at = ? WHERE id = ?", t, t, id);
+    return { forgotten: id };
+  }
+
   /** Time and activity of one agent session, from the rows its transcript produced. */
   worklogSession(sessionId: string) {
     const sid = required(sessionId, "session");
@@ -1316,6 +1437,11 @@ export class Store {
       ...args,
     );
     tables.tasks = this.db.all(`SELECT ${cols("tasks", "x")} FROM tasks x${scoped("x.project_key")}`, ...args);
+    // The user's own and the organization's preferences go with any export; another project's do not.
+    tables.taste = this.db.all(
+      `SELECT ${cols("taste", "x")} FROM taste x${project ? " WHERE x.scope <> 'project' OR x.ref = ?" : ""}`,
+      ...args,
+    );
 
     return { format: "task-runner-export", version: 1, exported_at: this.clock(), tables };
   }

@@ -6407,12 +6407,12 @@ var init_stdio2 = __esm({
         this.onclose?.();
       }
       send(message) {
-        return new Promise((resolve6) => {
+        return new Promise((resolve7) => {
           const json = serializeMessage(message);
           if (this._stdout.write(json)) {
-            resolve6();
+            resolve7();
           } else {
-            this._stdout.once("drain", resolve6);
+            this._stdout.once("drain", resolve7);
           }
         });
       }
@@ -12933,7 +12933,7 @@ var init_protocol = __esm({
               return;
             }
             const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-            await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
+            await new Promise((resolve7) => setTimeout(resolve7, pollInterval));
             options?.signal?.throwIfAborted();
           }
         } catch (error2) {
@@ -12950,7 +12950,7 @@ var init_protocol = __esm({
        */
       request(request, resultSchema, options) {
         const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-        return new Promise((resolve6, reject) => {
+        return new Promise((resolve7, reject) => {
           const earlyReject = (error2) => {
             reject(error2);
           };
@@ -13028,7 +13028,7 @@ var init_protocol = __esm({
               if (!parseResult.success) {
                 reject(parseResult.error);
               } else {
-                resolve6(parseResult.data);
+                resolve7(parseResult.data);
               }
             } catch (error2) {
               reject(error2);
@@ -13289,12 +13289,12 @@ var init_protocol = __esm({
           }
         } catch {
         }
-        return new Promise((resolve6, reject) => {
+        return new Promise((resolve7, reject) => {
           if (signal.aborted) {
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
             return;
           }
-          const timeoutId = setTimeout(resolve6, interval);
+          const timeoutId = setTimeout(resolve7, interval);
           signal.addEventListener("abort", () => {
             clearTimeout(timeoutId);
             reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -16321,7 +16321,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve6.call(this, root, ref);
+      let _sch = resolve7.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a = root.localRefs) === null || _a === void 0 ? void 0 : _a[ref];
         const { schemaId } = this.opts;
@@ -16348,7 +16348,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve6(root, ref) {
+    function resolve7(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -16923,7 +16923,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve6(baseURI, relativeURI, options) {
+    function resolve7(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const resolved = resolveComponent(parse3(baseURI, schemelessOptions), parse3(relativeURI, schemelessOptions), schemelessOptions, true);
       schemelessOptions.skipEscape = true;
@@ -17150,7 +17150,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize: normalize2,
-      resolve: resolve6,
+      resolve: resolve7,
       resolveComponent,
       equal,
       serialize,
@@ -21132,7 +21132,7 @@ var init_mcp = __esm({
         let task = createTaskResult.task;
         const pollInterval = task.pollInterval ?? 5e3;
         while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-          await new Promise((resolve6) => setTimeout(resolve6, pollInterval));
+          await new Promise((resolve7) => setTimeout(resolve7, pollInterval));
           const updatedTask = await extra.taskStore.getTask(taskId);
           if (!updatedTask) {
             throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -22032,7 +22032,7 @@ function registerTools(server, ctx) {
       "rules",
       {
         title: "User rules",
-        description: "The user's standing rules for this project, organization and device, as injected at session start. action 'show' returns them. action 'propose' suggests a new or changed rule when the user states a lasting preference or corrects you more than once; it only queues a proposal, and the user approves it in the panel, the web page or the CLI. Never propose secrets, one-off instructions or things the code already shows.",
+        description: "The user's standing rules for this project, organization and device, as injected at session start. action 'show' returns them. action 'propose' queues a rule the user explicitly asked to make standing; the user approves it in the panel, the web page or the CLI. Preferences you pick up from the conversation go to the taste tool instead. Never propose secrets or one-off instructions.",
         inputSchema: {
           action: external_exports.enum(["show", "propose"]),
           scope: external_exports.enum(["global", "device", "org", "project", "project_device"]).optional().describe("For propose. global: everywhere. device: this machine. org: the organization of this repo. project: this project. project_device: this project on this machine."),
@@ -22062,6 +22062,42 @@ function registerTools(server, ctx) {
       })
     );
   }
+  server.registerTool(
+    "taste",
+    {
+      title: "Learned preferences",
+      description: "How the user wants things, learned from what they said: style, workflow, wording, tools. They are injected at session start and apply at once, with no approval. action 'show' lists them with ids. action 'learn' records what a message taught: 'new' for a wish not seen before, 'reinforce' when they say an existing one again, 'refine' when they adjust it, 'replace' when they now want something different on the same point, 'drop' when they take it back. Write each rule as a general, short instruction (one step more general than the message, never their words as a log). scope 'global' for how they work everywhere, 'org' for this organization, 'project' for this codebase. In Claude Code the panel learns these by itself; call learn when the user asks you to remember how they want something. Never store secrets or people's private data.",
+      inputSchema: {
+        action: external_exports.enum(["show", "learn", "forget"]),
+        items: external_exports.array(
+          external_exports.object({
+            action: external_exports.enum(["new", "reinforce", "refine", "replace", "drop"]).optional(),
+            id: external_exports.string().optional().describe("The existing preference, for reinforce, refine, replace and drop"),
+            scope: external_exports.enum(["global", "org", "project"]).optional(),
+            area: external_exports.string().max(40).optional().describe("A short topic: workflow, commits, replies, ui, testing..."),
+            rule: external_exports.string().max(300).optional()
+          })
+        ).max(20).optional().describe("For learn"),
+        id: external_exports.string().optional().describe("For forget")
+      },
+      annotations: WRITE
+    },
+    ({ action, items, id }) => run(async () => {
+      const s = await session.get();
+      if (action === "forget") {
+        if (!id) throw new StoreError("invalid", "forget needs id");
+        return store.tasteForget(id);
+      }
+      if (action === "learn") {
+        if (!items?.length) throw new StoreError("invalid", "learn needs items");
+        return store.tasteLearn({ project: s.project, org: s.org, source: "agent", items });
+      }
+      const rows = await store.tasteList({ project: s.project, org: s.org });
+      return {
+        preferences: rows.map((r) => ({ id: r.id, scope: r.scope, area: r.area, rule: r.rule, confidence: r.confidence, hits: r.hits }))
+      };
+    })
+  );
   if (ctx.worklog) {
     const worklog = ctx.worklog;
     server.registerTool(
@@ -22874,6 +22910,25 @@ var init_schema = __esm({
         db.run(
           "INSERT INTO schema_meta (key, value) VALUES ('reindex', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
         );
+      },
+      (db) => {
+        db.exec(`
+      CREATE TABLE taste (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        ref TEXT NOT NULL DEFAULT '',
+        area TEXT NOT NULL DEFAULT 'general',
+        rule TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        hits INTEGER NOT NULL DEFAULT 1,
+        replaced TEXT,
+        source TEXT NOT NULL DEFAULT 'prompt',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        valid_until INTEGER
+      );
+      CREATE INDEX idx_taste_scope ON taste(scope, ref, valid_until);
+    `);
       }
     ];
     SCHEMA_VERSION = migrations.length;
@@ -22883,6 +22938,12 @@ var init_schema = __esm({
 });
 
 // src/core/store.ts
+function overlap(a, b) {
+  if (a.size === 0 || b.size === 0) return 0;
+  let same = 0;
+  for (const w of a) if (b.has(w)) same++;
+  return same / Math.min(a.size, b.size);
+}
 function newId2(prefix) {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return `${prefix}_${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
@@ -22904,9 +22965,9 @@ function looksLikeConflict(a, b) {
   if (wa.size < 2 || wb.size < 2) return false;
   let shared = 0;
   for (const w of wa) if (wb.has(w)) shared++;
-  const overlap = shared / Math.min(wa.size, wb.size);
+  const overlap2 = shared / Math.min(wa.size, wb.size);
   const numbers = (t) => (t.match(/\d+(?:[.,]\d+)?/g) ?? []).join("|");
-  return overlap >= 0.6 && numbers(a) !== numbers(b) && numbers(a) !== "" && numbers(b) !== "";
+  return overlap2 >= 0.6 && numbers(a) !== numbers(b) && numbers(a) !== "" && numbers(b) !== "";
 }
 function clamp(n, min, max) {
   return Math.min(Math.max(n, min), max);
@@ -22941,6 +23002,7 @@ var init_store = __esm({
       ],
       observations: ["id", "entity_id", "content", "source", "confidence", "created_at", "valid_until", "superseded_by"],
       relations: ["id", "source_id", "target_id", "relation_type", "weight", "context", "created_at", "valid_until"],
+      taste: ["id", "scope", "ref", "area", "rule", "confidence", "hits", "replaced", "source", "created_at", "updated_at", "valid_until"],
       tasks: [
         "project_key",
         "task_group",
@@ -23946,6 +24008,104 @@ var init_store = __esm({
           this.db.run(`DELETE FROM worklog_files${where.replace("%c", "path")}`, ...args);
         });
       }
+      // ─── Taste: preferences learned from what the user says ───
+      /** The learned preferences that apply to a project: the user's own, the organization's and the project's. */
+      tasteList(input) {
+        const project = required2(input.project, "project");
+        return this.db.all(
+          `SELECT id, scope, ref, area, rule, confidence, hits, replaced, source, created_at, updated_at FROM taste
+       WHERE valid_until IS NULL AND ((scope = 'global') OR (scope = 'org' AND ref = ?) OR (scope = 'project' AND ref = ?))
+       ORDER BY confidence DESC, updated_at DESC`,
+          input.org ?? "\0",
+          project
+        );
+      }
+      /**
+       * Applies what one message taught. Nothing waits for approval: a preference counts from the first time it is said,
+       * saying it again makes it firmer, and a different wish on the same point replaces it.
+       */
+      tasteLearn(input) {
+        const project = required2(input.project, "project");
+        const t = this.clock();
+        const out = [];
+        this.db.transaction(() => {
+          for (const item of input.items ?? []) {
+            const action = item.action ?? "new";
+            const scope = item.scope === "global" ? "global" : item.scope === "org" && input.org ? "org" : "project";
+            const ref = scope === "global" ? "" : scope === "org" ? String(input.org) : project;
+            const area = (item.area ?? "general").trim().toLowerCase().slice(0, 40) || "general";
+            const rule = (item.rule ?? "").trim().slice(0, 300);
+            let existing = item.id ? this.db.get("SELECT * FROM taste WHERE id = ? AND valid_until IS NULL", item.id) : void 0;
+            if (!existing && rule && (action === "new" || action === "reinforce")) {
+              const words2 = wordSet(rule);
+              existing = this.db.all("SELECT * FROM taste WHERE scope = ? AND ref = ? AND valid_until IS NULL", scope, ref).find((r) => overlap(words2, wordSet(r.rule)) >= 0.7);
+            }
+            if (action === "drop") {
+              if (existing) {
+                this.db.run("UPDATE taste SET valid_until = ?, updated_at = ? WHERE id = ?", t, t, existing.id);
+                out.push({ id: existing.id, action, rule: existing.rule, confidence: 0 });
+              }
+              continue;
+            }
+            if (!rule && !existing) continue;
+            if (existing && action === "replace") {
+              this.db.run("UPDATE taste SET valid_until = ?, updated_at = ? WHERE id = ?", t, t, existing.id);
+              const id = newId2("taste");
+              const confidence = 0.6;
+              this.db.run(
+                `INSERT INTO taste (id, scope, ref, area, rule, confidence, hits, replaced, source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+                id,
+                existing.scope,
+                existing.ref,
+                area,
+                rule || existing.rule,
+                confidence,
+                existing.rule,
+                input.source ?? "prompt",
+                t,
+                t
+              );
+              out.push({ id, action, rule: rule || existing.rule, confidence });
+            } else if (existing) {
+              const gain = action === "refine" ? 0.25 : 0.5;
+              const confidence = Number(Math.min(0.99, existing.confidence + (1 - existing.confidence) * gain).toFixed(3));
+              this.db.run(
+                "UPDATE taste SET rule = ?, area = ?, confidence = ?, hits = hits + 1, updated_at = ? WHERE id = ?",
+                rule || existing.rule,
+                item.area ? area : existing.area,
+                confidence,
+                t,
+                existing.id
+              );
+              out.push({ id: existing.id, action: action === "refine" ? "refine" : "reinforce", rule: rule || existing.rule, confidence });
+            } else {
+              const id = newId2("taste");
+              this.db.run(
+                `INSERT INTO taste (id, scope, ref, area, rule, confidence, hits, source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 0.5, 1, ?, ?, ?)`,
+                id,
+                scope,
+                ref,
+                area,
+                rule,
+                input.source ?? "prompt",
+                t,
+                t
+              );
+              out.push({ id, action: "new", rule, confidence: 0.5 });
+            }
+          }
+        });
+        return { learned: out };
+      }
+      tasteForget(id) {
+        const t = this.clock();
+        const row = this.db.get("SELECT id FROM taste WHERE id = ? AND valid_until IS NULL", required2(id, "id"));
+        if (!row) throw new StoreError("not_found", `No preference '${id}'`);
+        this.db.run("UPDATE taste SET valid_until = ?, updated_at = ? WHERE id = ?", t, t, id);
+        return { forgotten: id };
+      }
       /** Time and activity of one agent session, from the rows its transcript produced. */
       worklogSession(sessionId) {
         const sid = required2(sessionId, "session");
@@ -24177,6 +24337,10 @@ var init_store = __esm({
           ...args
         );
         tables.tasks = this.db.all(`SELECT ${cols("tasks", "x")} FROM tasks x${scoped("x.project_key")}`, ...args);
+        tables.taste = this.db.all(
+          `SELECT ${cols("taste", "x")} FROM taste x${project ? " WHERE x.scope <> 'project' OR x.ref = ?" : ""}`,
+          ...args
+        );
         return { format: "task-runner-export", version: 1, exported_at: this.clock(), tables };
       }
       importAll(data) {
@@ -25403,6 +25567,30 @@ var init_markdown = __esm({
   }
 });
 
+// src/core/taste.ts
+function formatTaste(rows, maxChars = MAX_CHARS) {
+  if (rows.length === 0) return "";
+  const head = "## How the user wants things (learned from what they said)\nFollow these unless the current request says otherwise. When it does, the newer wish wins.";
+  const lines = [];
+  let used = head.length;
+  for (const r of rows) {
+    const where = r.scope === "global" ? "" : r.scope === "org" ? ` [org ${r.ref}]` : "";
+    const line2 = `- ${r.area}: ${r.rule} (${strength(r)})${where}`;
+    if (used + line2.length + 1 > maxChars) break;
+    lines.push(line2);
+    used += line2.length + 1;
+  }
+  return [head, ...lines].join("\n");
+}
+var MAX_CHARS, strength;
+var init_taste = __esm({
+  "src/core/taste.ts"() {
+    "use strict";
+    MAX_CHARS = 3e3;
+    strength = (r) => r.confidence >= 0.85 ? "firm" : r.hits > 1 ? `said ${r.hits} times` : "said once";
+  }
+});
+
 // src/cli/digest.ts
 function formatDigest(header, d) {
   const { stats } = d;
@@ -25498,6 +25686,7 @@ async function hookSessionStart() {
     const device = deviceInfo();
     if (backend.mode === "local") await backend.rules.registerDevice(device);
     const rules = await resolveForHook(backend.rules, { project: detected.project, org: detected.org, device: device.id });
+    const taste = formatTaste(await Promise.resolve().then(() => store.tasteList({ project: detected.project, org: detected.org })).catch(() => []));
     backend.close();
     const rulesNote = rules.text ? rules.stale ? " \xB7 rules (cached)" : " \xB7 rules" : rules.error ? " \xB7 rules unavailable" : "";
     const pending = rules.pending ? ` \xB7 ${rules.pending} rule proposal(s) to review` : "";
@@ -25505,7 +25694,7 @@ async function hookSessionStart() {
     output = {
       hookSpecificOutput: {
         hookEventName: "SessionStart",
-        additionalContext: [rules.text ? rules.text + staleLine : "", context2].filter(Boolean).join("\n\n")
+        additionalContext: [rules.text ? rules.text + staleLine : "", taste, context2].filter(Boolean).join("\n\n")
       },
       systemMessage: status + rulesNote + pending
     };
@@ -25684,6 +25873,7 @@ var init_commands = __esm({
     init_project();
     init_sqlite();
     init_remote();
+    init_taste();
     init_digest();
     has = (args, name) => args.includes(name);
   }
@@ -25911,6 +26101,53 @@ var init_serve = __esm({
     init_backend();
     init_remote();
     init_worklog();
+    init_commands();
+  }
+});
+
+// src/cli/taste.ts
+var taste_exports = {};
+__export(taste_exports, {
+  tasteCommand: () => tasteCommand
+});
+import { readFileSync as readFileSync4 } from "node:fs";
+import { resolve as resolve4 } from "node:path";
+async function tasteCommand(args) {
+  const [first] = args;
+  const sub = first && !first.startsWith("--") ? first : "list";
+  const backend = openBackend();
+  try {
+    const { store } = backend;
+    const detected = await projectFor(store, resolve4(flag(args, "--cwd") ?? process.cwd()));
+    if (sub === "list") {
+      const rows = await store.tasteList({ project: detected.project, org: detected.org });
+      if (args.includes("--json")) console.log(JSON.stringify({ project: detected.project, org: detected.org, preferences: rows }));
+      else console.log(formatTaste(rows, Infinity) || "Nothing learned yet. Preferences you state in a session are picked up as you go.");
+      return;
+    }
+    if (sub === "learn") {
+      const raw = flag(args, "--data") ?? (process.stdin.isTTY ? "" : readFileSync4(0, "utf8"));
+      const payload = JSON.parse(raw || "{}");
+      if (!Array.isArray(payload.items)) throw new Error(`Usage: task-runner-mcp taste learn --data '{"items":[...]}'`);
+      console.log(JSON.stringify(await store.tasteLearn({ project: detected.project, org: detected.org, source: payload.source, items: payload.items })));
+      return;
+    }
+    if (sub === "forget") {
+      const id = args[1];
+      if (!id || id.startsWith("--")) throw new Error("Usage: task-runner-mcp taste forget <id>");
+      console.log(JSON.stringify(await store.tasteForget(id)));
+      return;
+    }
+    throw new Error("Usage: task-runner-mcp taste [list | learn --data <json> | forget <id>]");
+  } finally {
+    backend.close();
+  }
+}
+var init_taste2 = __esm({
+  "src/cli/taste.ts"() {
+    "use strict";
+    init_taste();
+    init_backend();
     init_commands();
   }
 });
@@ -26175,9 +26412,9 @@ __export(dashboard_exports, {
   findStaticDir: () => findStaticDir
 });
 import { execFile } from "node:child_process";
-import { existsSync as existsSync5, readFileSync as readFileSync4, statSync as statSync2 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync5, statSync as statSync2 } from "node:fs";
 import { createServer as createServer2 } from "node:http";
-import { dirname as dirname6, extname, join as join6, normalize, resolve as resolve4, sep } from "node:path";
+import { dirname as dirname6, extname, join as join6, normalize, resolve as resolve5, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 function readBody(req) {
   return new Promise((resolveBody, reject) => {
@@ -26280,7 +26517,7 @@ function createDashboardServer(store, staticDir, rules) {
           TYPES[".html"]
         );
       }
-      const root = resolve4(staticDir);
+      const root = resolve5(staticDir);
       let file = normalize(join6(root, decodeURIComponent(url.pathname)));
       if (file !== root && !file.startsWith(root + sep)) return sendJson(res, 403, { error: "Forbidden" });
       if (existsSync5(file) && statSync2(file).isDirectory()) file = join6(file, "index.html");
@@ -26288,7 +26525,7 @@ function createDashboardServer(store, staticDir, rules) {
         if (extname(file)) return sendJson(res, 404, { error: "Not found" });
         file = join6(root, "index.html");
       }
-      return send(res, 200, readFileSync4(file), TYPES[extname(file)] ?? "application/octet-stream");
+      return send(res, 200, readFileSync5(file), TYPES[extname(file)] ?? "application/octet-stream");
     } catch (error2) {
       return sendJson(res, 500, { error: error2 instanceof Error ? error2.message : "Internal error" });
     }
@@ -26361,16 +26598,16 @@ __export(rules_exports, {
   rulesCommand: () => rulesCommand
 });
 import { execFileSync as execFileSync2 } from "node:child_process";
-import { mkdtempSync, readFileSync as readFileSync5, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
+import { mkdtempSync, readFileSync as readFileSync6, rmSync, writeFileSync as writeFileSync3 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join as join7, resolve as resolve5 } from "node:path";
+import { join as join7, resolve as resolve6 } from "node:path";
 import { createInterface } from "node:readline/promises";
 function words(args) {
   return args.filter((a, i) => !a.startsWith("--") && !(i > 0 && valueFlags.has(args[i - 1])));
 }
 async function context(args) {
   const backend = openBackend();
-  const detected = await resolveProject(resolve5(flag(args, "--cwd") ?? process.cwd()), (p) => backend.store.findProjectByPath(p));
+  const detected = await resolveProject(resolve6(flag(args, "--cwd") ?? process.cwd()), (p) => backend.store.findProjectByPath(p));
   return { backend, detected, device: deviceInfo(), client: backend.rules };
 }
 function scopeOf(args, c) {
@@ -26384,7 +26621,7 @@ function scopeOf(args, c) {
   return { scope, ref, device: flag(args, "--device-id") ?? (scope === "device" || scope === "project_device" ? c.device.id : null) };
 }
 async function readSecret(prompt) {
-  if (!process.stdin.isTTY) return readFileSync5(0, "utf8").trim();
+  if (!process.stdin.isTTY) return readFileSync6(0, "utf8").trim();
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
     return (await rl.question(prompt)).trim();
@@ -26460,13 +26697,13 @@ ${d.body}
           writeFileSync3(file, current);
           const editor = process.env.VISUAL || process.env.EDITOR || "vi";
           execFileSync2(editor, [file], { stdio: "inherit" });
-          body = readFileSync5(file, "utf8");
+          body = readFileSync6(file, "utf8");
           rmSync(dir, { recursive: true, force: true });
         } else {
           const file = flag(rest, "--file");
           const typed = words(rest).join(" ");
-          const piped = !file && !typed && !process.stdin.isTTY ? readFileSync5(0, "utf8") : "";
-          const text3 = file ? readFileSync5(file, "utf8") : typed || piped;
+          const piped = !file && !typed && !process.stdin.isTTY ? readFileSync6(0, "utf8") : "";
+          const text3 = file ? readFileSync6(file, "utf8") : typed || piped;
           if (!text3.trim() && !has2(rest, "--clear")) throw new Error("Give the rule text, --file <path>, or --clear to remove the document.");
           body = has2(rest, "--append") && current ? `${current}
 ${text3}` : has2(rest, "--clear") ? "" : text3;
@@ -26501,7 +26738,7 @@ ${text3}` : has2(rest, "--clear") ? "" : text3;
           const file = join7(dir, "proposal.md");
           writeFileSync3(file, p.text);
           execFileSync2(process.env.VISUAL || process.env.EDITOR || "vi", [file], { stdio: "inherit" });
-          edited = readFileSync5(file, "utf8");
+          edited = readFileSync6(file, "utf8");
           rmSync(dir, { recursive: true, force: true });
         }
         console.log(JSON.stringify(await c.client.approve(id, edited)));
@@ -26569,6 +26806,7 @@ Usage: task-runner-mcp [command]
   hook session-start         Print the SessionStart hook output for Claude Code
   snapshot [--cwd d] [--query q | --entity name]
   session --id <session id> [--cwd d]          this session's time and what it saved
+  taste [list | learn --data <json> | forget <id>]   preferences learned from what you said
                              JSON view of a project's tasks, notes and graph
   worklog [--week|--today|--last-week|--month|--from D --to D] [--project k|.] [--exclude a*,b] [--format text|md|csv|json] [--detail]
                              Time per project and task: you vs the agent
@@ -26617,6 +26855,8 @@ async function main() {
       return await (await Promise.resolve().then(() => (init_commands(), commands_exports))).snapshot(args);
     case "session":
       return await (await Promise.resolve().then(() => (init_worklog(), worklog_exports))).sessionCommand(args);
+    case "taste":
+      return await (await Promise.resolve().then(() => (init_taste2(), taste_exports))).tasteCommand(args);
     case "dashboard": {
       const { dashboard: dashboard2 } = await Promise.resolve().then(() => (init_dashboard(), dashboard_exports));
       await dashboard2(args);

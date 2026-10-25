@@ -24,6 +24,7 @@ Usage: task-runner-mcp [command]
   hook session-start         Print the SessionStart hook output for Claude Code
   snapshot [--cwd d] [--query q | --entity name]
   session --id <session id> [--cwd d]          this session's time and what it saved
+  taste [list | learn --data <json> | forget <id>]   preferences learned from what you said
                              JSON view of a project's tasks, notes and graph
   worklog [--week|--today|--last-week|--month|--from D --to D] [--project k|.] [--exclude a*,b] [--format text|md|csv|json] [--detail]
                              Time per project and task: you vs the agent
@@ -75,6 +76,8 @@ async function main(): Promise<void> {
       return await (await import("./commands.ts")).snapshot(args);
     case "session":
       return await (await import("./worklog.ts")).sessionCommand(args);
+    case "taste":
+      return await (await import("./taste.ts")).tasteCommand(args);
     case "dashboard": {
       const { dashboard } = await import("./dashboard.ts");
       await dashboard(args);

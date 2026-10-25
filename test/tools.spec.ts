@@ -40,7 +40,7 @@ async function connect(options: { detect?: boolean; files?: Set<string> } = {}) 
 test("every tool is documented and annotated, and the list stays small", async () => {
   const { client } = await connect();
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 16);
+  assert.equal(tools.length, 17);
   for (const tool of tools) {
     assert.ok(tool.description && tool.description.length > 20, `${tool.name} needs a description`);
     assert.ok(tool.annotations, `${tool.name} needs annotations`);
@@ -251,7 +251,7 @@ test("the worklog tool exists only when the host can read transcripts", async ()
   const client = new Client({ name: "test", version: "0" });
   await Promise.all([server.connect(a), client.connect(b)]);
 
-  assert.equal((await client.listTools()).tools.length, 17);
+  assert.equal((await client.listTools()).tools.length, 18);
   const res = (await client.callTool({ name: "worklog", arguments: { project: "current", detail: true } })) as { content: Array<{ text: string }> };
   assert.equal(JSON.parse(res.content[0].text).totals.you, "1h 00m");
   assert.deepEqual(seen[0], { range: "week", from: undefined, to: undefined, project: "demo", detail: true });

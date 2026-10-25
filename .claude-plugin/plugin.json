@@ -18,6 +18,12 @@
   ],
   "types": "./types/index.d.ts",
   "userConfig": {
+    "taste": {
+      "type": "boolean",
+      "title": "Learn how you want things",
+      "description": "Pick up your directives, corrections and preferences as you talk, keep them in memory and give them to every new session. Runs in the background after a turn. /taste off stops it for one session.",
+      "default": true
+    },
     "nudge": {
       "type": "boolean",
       "title": "Remind the agent to save memory",

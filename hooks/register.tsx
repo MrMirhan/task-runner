@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Detail, RulesView, SearchState, SessionView, Snapshot, Tab, WorklogView } from '../types'
+import type { Detail, RulesView, SearchState, SessionView, Snapshot, Tab, TastePreference, WorklogView } from '../types'
 
 const PANE = 'brain'
 const TITLE = 'Task Runner'
@@ -14,9 +14,15 @@ const worklogValue = atom({ plugin: 'task-runner', key: 'worklog' } as const, nu
 const rulesValue = atom({ plugin: 'task-runner', key: 'rules' } as const, null)
 const sessionValue = atom({ plugin: 'task-runner', key: 'session' } as const, null)
 const commitsValue = atom({ plugin: 'task-runner', key: 'commits' } as const, [])
+const tasteValue = atom({ plugin: 'task-runner', key: 'taste' } as const, null)
+// null: the plugin setting decides; 'on' or 'off': the person's choice for this session.
+const tasteModeValue = atom({ plugin: 'task-runner', key: 'tasteMode' } as const, null)
+// Preferences learned since the last prompt, told to the agent with the next one.
+const tasteNoteValue = atom({ plugin: 'task-runner', key: 'tasteNote' } as const, [])
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'session', label: 'Session' },
+  { id: 'taste', label: 'Taste' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'notes', label: 'Notes' },
   { id: 'graph', label: 'Graph' },
@@ -30,7 +36,7 @@ const GLYPH: Record<string, string> = { completed: '✓', failed: '✗', running
 const MEMORY_TOOL = /^mcp__(?:plugin_task-runner_)?task-runner__(\w+)$/
 const WRITES = new Set([
   'remember', 'add_facts', 'correct_fact', 'link', 'forget', 'save_memory',
-  'create_task_group', 'complete_task', 'fail_task', 'rules',
+  'create_task_group', 'complete_task', 'fail_task', 'rules', 'taste',
 ])
 const SAVES_MEMORY = new Set(['remember', 'add_facts', 'correct_fact', 'link', 'save_memory'])
 const FILE_EDITS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
@@ -39,7 +45,7 @@ const OWN_TOOL = /^mcp__plugin_task-runner_task-runner__(\w+)$/
 const PROMPT_FREE = new Set([
   'set_context', 'list_projects', 'get_context', 'save_memory', 'remember', 'correct_fact', 'link', 'recall',
   'what_do_i_know', 'forget', 'graph_stats', 'create_task_group', 'get_next_task', 'complete_task', 'get_task_status',
-  'rules', 'worklog',
+  'rules', 'worklog', 'taste',
 ])
 
 // Work nobody awaits must not surface as an unhandled rejection when the session is gone.
@@ -139,6 +145,74 @@ async function loadSession($: EngineInterface, force = false): Promise<void> {
   } finally {
     isLoadingSession = false
   }
+}
+
+// ─── Taste: learned from what the person says, kept in memory, no approval step ───
+
+// Words that carry a directive, a correction or a preference. Turkish stems match their suffixed forms.
+const TASTE_SIGNAL = new RegExp(
+  [
+    '\\b(always|never|don\'t|do not|stop|instead|prefer|from now on|i want|i don\'t want|wrong|not like that|too (long|short|much|many|verbose))\\b',
+    'hep |her zaman|asla|hiçbir zaman|bundan sonra|artık|yapma|etme|istemiyorum|istiyorum|olmasın|olsun|tercih|yerine|yanlış|hayır|öyle değil|böyle değil|çok uzun|çok kısa|fazla|gerek yok|kullanma|şöyle yap|böyle yap|unutma|dikkat et',
+  ].join('|'),
+  'i',
+)
+const TASTE_MAX_PROMPT = 2000
+
+async function loadTaste($: EngineInterface): Promise<void> {
+  const raw = await cli<{ preferences: TastePreference[] }>($, ['taste', 'list', '--json'])
+  if (raw && Array.isArray(raw.preferences)) await update($, tasteValue, () => raw.preferences)
+}
+
+async function tasteIsOn($: EngineInterface, byDefault: boolean): Promise<boolean> {
+  const mode = await read($, tasteModeValue)
+  return mode === null ? byDefault : mode === 'on'
+}
+
+function tastePrompt(known: TastePreference[], messages: string[] | null): string {
+  return [
+    '[task-runner taste] This is a background check, not a turn: do not answer the user and do not continue the task.',
+    messages
+      ? 'Read the user message(s) quoted below.'
+      : 'Read every message the user wrote in this conversation, oldest first, including the ones a compaction summarised.',
+    'Find lasting preferences: how they want things done, given as a directive, a correction, a rejection, a preference or an approval with a reason.',
+    'Skip one-off task details (this file, this value, today) unless they show a general wish. Generalise one step: from "this menu" to "menus", not to "everything".',
+    'Never record secrets, addresses, keys or people\'s names.',
+    'scope: global for how they work or talk everywhere, org for every repository of this organization, project for this codebase only.',
+    'Known preferences (id | scope | area | rule):',
+    known.length ? known.map(k => k.id + ' | ' + k.scope + ' | ' + k.area + ' | ' + k.rule).join('\n') : '(none)',
+    'For a message about a known preference use its id: reinforce (said again), refine (adjusted), replace (now wants something different on that point), drop (takes it back). Otherwise new.',
+    'Reply with JSON only: {"items":[{"action":"new","scope":"global","area":"replies","rule":"Reply in the language the user writes in."}]}. Write each rule as one short imperative sentence in English. Reply {"items":[]} when nothing lasting was said.',
+    ...(messages ? ['Messages:', ...messages.map(m => '<<<\n' + m + '\n>>>')] : []),
+  ].join('\n')
+}
+
+// One fork per check: the session's own prefix comes from the cache, the main context gets nothing until it learned something.
+async function learnTaste($: EngineInterface, messages: string[] | null, announce: boolean): Promise<number> {
+  const known = (await read($, tasteValue)) ?? []
+  const reply = await $.model.fork({ prompt: tastePrompt(known, messages) })
+  if (!reply.isAnswered) return 0
+  const json = /\{[\s\S]*\}/.exec(reply.text)?.[0]
+  if (!json) return 0
+  let items: unknown
+  try {
+    items = (JSON.parse(json) as { items?: unknown }).items
+  } catch {
+    return 0
+  }
+  if (!Array.isArray(items) || items.length === 0) return 0
+  const out = await cli<{ learned: Array<{ action: string; rule: string }> }>($, [
+    'taste', 'learn', '--data', JSON.stringify({ items: items.slice(0, 20), source: messages ? 'prompt' : 'backfill' }),
+  ])
+  const learned = out?.learned ?? []
+  if (learned.length === 0) return 0
+  await update($, tasteNoteValue, notes => [...notes, ...learned.map(l => (l.action === 'drop' ? 'no longer: ' : '') + l.rule)].slice(-10))
+  await loadTaste($)
+  if (announce) {
+    const first = learned[0]!
+    $.ui.toast('task-runner: ' + (learned.length === 1 ? (first.action === 'new' ? 'learned: ' : first.action + ': ') + first.rule : 'learned ' + learned.length + ' preference(s)'))
+  }
+  return learned.length
 }
 
 async function decide($: EngineInterface, action: 'approve' | 'reject', id: string): Promise<void> {
@@ -322,6 +396,9 @@ export const register: Register = (on, options) => {
   const wantsBand = options.band !== false
   const wantsCommitNotes = options.commitNotes !== false
   const wantsApproval = options.approve !== false
+  const tasteByDefault = options.taste !== false
+  // The person's messages of the running turn that look like they carry a preference.
+  let tasteCandidates: string[] = []
 
   let edits = 0
   let commits = 0
@@ -331,12 +408,14 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     background(refresh($))
     background(loadSession($, true))
+    background(loadTaste($))
     try {
       await $.command.register({ name: 'brain', description: 'Open the task and memory panel' })
       await $.command.register({ name: 'recall', description: 'Search project memory', argumentHint: '<keywords>' })
       await $.command.register({ name: 'remember', description: 'Save a note to project memory', argumentHint: '<text>' })
       await $.command.register({ name: 'rules', description: 'Show your rules, or approve or reject a proposal', argumentHint: '[approve|reject <id>]' })
       await $.command.register({ name: 'worklog', description: 'Show time spent by you and the agent', argumentHint: '[today|week|last-week|month]' })
+      await $.command.register({ name: 'taste', description: 'What the agent learned about how you want things; on or off for this session', argumentHint: '[on|off|forget <id>]' })
     } catch (error) {
       $.ui.log('task-runner: command registration skipped: ' + String(error))
     }
@@ -388,6 +467,31 @@ export const register: Register = (on, options) => {
     }
     const text = await cliText($, ['worklog', '--' + period, '--detail'])
     return { text: text ?? 'task-runner: could not read the time report. Run `node ' + $.plugin.root + '/dist/cli.js doctor`.' }
+  })
+
+  on('command.run', { command: 'taste' }, async ($, e) => {
+    const [action, id] = e.args.trim().split(/\s+/)
+    if (action === 'off') {
+      await update($, tasteModeValue, () => 'off')
+      tasteCandidates = []
+      return { text: 'Taste learning is off for this session. What was learned stays and is still followed.' }
+    }
+    if (action === 'on') {
+      await update($, tasteModeValue, () => 'on')
+      await loadTaste($)
+      // Turned on in a session that already ran: read what was said so far, once.
+      const count = await learnTaste($, null, false)
+      return { text: 'Taste learning is on for this session.' + (count ? ' From the messages so far: ' + count + ' preference(s) learned or updated.' : '') }
+    }
+    if (action === 'forget') {
+      if (!id) return { text: 'Usage: /taste forget <id>' }
+      const out = await cliText($, ['taste', 'forget', id])
+      await loadTaste($)
+      return { text: out ? 'Forgotten.' : 'task-runner: no preference ' + id }
+    }
+    const list = await cliText($, ['taste', 'list'])
+    const learning = await tasteIsOn($, tasteByDefault)
+    return { text: (list ?? 'task-runner: preferences are unavailable.') + '\n\nLearning is ' + (learning ? 'on' : 'off') + ' in this session (/taste ' + (learning ? 'off' : 'on') + ').' }
   })
 
   on('command.run', { command: 'remember' }, async ($, e) => {
@@ -446,6 +550,11 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     background(refresh($))
     if (e.agentId === undefined) background(loadSession($, true))
+    if (e.agentId === undefined && !e.isAborted && tasteCandidates.length) {
+      const messages = tasteCandidates
+      tasteCandidates = []
+      background(learnTaste($, messages, wantsToasts))
+    }
     const isMainTurn = e.agentId === undefined && !e.isAborted
     const shouldNudge = wantsNudge && isMainTurn && saves === 0 && pendingNudge === null && (commits > 0 || edits >= 6)
     if (shouldNudge) {
@@ -463,10 +572,21 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    if (pendingNudge === null) return next(e)
-    const note = pendingNudge
-    pendingNudge = null
-    return next({ ...e, context: [...(e.context ?? []), note] })
+    const context = [...(e.context ?? [])]
+    if (pendingNudge !== null) {
+      context.push(pendingNudge)
+      pendingNudge = null
+    }
+    const text = e.text.trim()
+    if (text && !text.startsWith('/') && text.length >= 8 && TASTE_SIGNAL.test(text) && (await tasteIsOn($, tasteByDefault))) {
+      tasteCandidates.push(text.slice(0, TASTE_MAX_PROMPT))
+    }
+    const learned = await read($, tasteNoteValue)
+    if (learned.length) {
+      context.push('[task-runner] Learned from the user and kept for every session (follow from now on):\n' + learned.map(l => '- ' + l).join('\n'))
+      await update($, tasteNoteValue, () => [])
+    }
+    return context.length === (e.context ?? []).length ? next(e) : next({ ...e, context })
   })
 
   // The wheel, the arrows and the page keys move the list by lines; the pane itself stays on its rest row.
@@ -493,6 +613,8 @@ export const register: Register = (on, options) => {
     const rules = await read($, rulesValue)
     const session = await read($, sessionValue)
     const commits = await read($, commitsValue)
+    const taste = await read($, tasteValue)
+    const tasteOn = await tasteIsOn($, tasteByDefault)
     const width = Math.max(24, e.props.bodyColumns)
     const fullHeight = e.props.scroll?.bodyRows || undefined
     const redraw = () => $.ui.invalidate('ui.render')
@@ -503,6 +625,7 @@ export const register: Register = (on, options) => {
       if (id === 'time') await loadWorklog($)
       if (id === 'rules') await loadRules($)
       if (id === 'session') await loadSession($)
+      if (id === 'taste') await loadTaste($)
     }
 
     const tabs = (
@@ -591,6 +714,9 @@ export const register: Register = (on, options) => {
           lines.push(plain('s-commits', 'Commits', { bold: true }))
           commits.forEach((subject, i) => lines.push(plain('sc-' + i, subject, { dimColor: true })))
         }
+        lines.push(
+          plain('s-taste', 'Taste: ' + (tasteOn ? 'learning' : 'off') + ' · ' + (taste?.length ?? 0) + ' preference(s) followed', { dimColor: true }),
+        )
         if (rules) {
           lines.push(
             plain(
@@ -600,6 +726,52 @@ export const register: Register = (on, options) => {
             ),
           )
         }
+      }
+    } else if (tab === 'taste') {
+      top = (
+        <Box key="taste-head" flexDirection="row" columnGap={1} flexShrink={0}>
+          <Text bold>{tasteOn ? 'Learning from what you say' : 'Learning is off in this session'}</Text>
+          <Button
+            key="taste-toggle"
+            label={tasteOn ? 'Turn off' : 'Turn on'}
+            onPress={async () => {
+              await update($, tasteModeValue, () => (tasteOn ? 'off' : 'on'))
+              if (!tasteOn) background(learnTaste($, null, true))
+            }}
+          />
+        </Box>
+      )
+      const prefs = taste ?? []
+      if (prefs.length === 0) {
+        lines.push(wrapped('taste-empty', 'Nothing learned yet. Say how you want things ("always…", "don\'t…", "bundan sonra…") and it is kept for every session.', { dimColor: true }))
+      }
+      for (const p of prefs) {
+        const how = p.confidence >= 0.85 ? 'firm' : p.hits > 1 ? p.hits + '×' : 'once'
+        const where = p.scope === 'global' ? 'everywhere' : p.scope === 'org' ? 'org ' + p.ref : 'this project'
+        const text = p.area + ': ' + p.rule + ' ' + how + ' · ' + where
+        lines.push(
+          line(
+            'taste-' + p.id,
+            <Box key={'taste-' + p.id} flexDirection="row" columnGap={1}>
+              <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                <Text wrap="truncate-end">
+                  <Text dimColor>{p.area}</Text> {p.rule} <Text dimColor>{how + ' · ' + where}</Text>
+                </Text>
+              </Box>
+              <Button
+                key={'taste-forget-' + p.id}
+                label="×"
+                plain
+                onPress={async () => {
+                  await cliText($, ['taste', 'forget', p.id])
+                  await loadTaste($)
+                }}
+              />
+            </Box>,
+            text,
+            graphic ? 2 : 1,
+          ),
+        )
       }
     } else if (tab === 'tasks') {
       const group = snapshot.tasks

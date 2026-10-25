@@ -4,7 +4,7 @@ Memory for your coding agent. It remembers decisions, pitfalls and conventions b
 
 Task Runner is one package with four parts:
 
-- an **MCP server** with 18 tools (works in any MCP client, over stdio or HTTP),
+- an **MCP server** with 19 tools (works in any MCP client, over stdio or HTTP),
 - a **Claude Code plugin** that wires the server, a session briefing and a skill together,
 - a **mod** for Claude Code: a live side panel, memory toasts, task progress, reminders and a time report,
 - a **dashboard** with a graph view, a time report and a rules editor,
@@ -37,6 +37,7 @@ You need Node.js 22.13 or newer. Start a new session. The plugin adds:
 | `/recall <words>` | Search memory without using a model turn. |
 | `/remember <text>` | Save a note. |
 | `/worklog [week]` | Time spent by you and the agent, per project and task. |
+| `/taste [on\|off]` | What was learned about how you want things; turn learning on or off for this session. |
 | `/rules` | Show the rules in force. `/rules approve <id>` and `/rules reject <id>` decide a proposal. |
 | Toasts | Show what the agent remembers, links or forgets. |
 | Progress line | Shows task progress above the prompt while a task group is open. |
@@ -97,6 +98,7 @@ Other clients do not get the briefing, the panel or the slash commands. The tool
 | `create_task_group`, `get_next_task`, `complete_task`, `get_task_status`, `clear_tasks` | The task loop. |
 | `worklog` | Time by you and the agent per project and task, for a period. |
 | `rules` | Show your standing rules, or propose a new one. The agent cannot change rules; you approve. |
+| `taste` | Show, record or forget the preferences learned from what you said. They apply at once. |
 | `set_context`, `list_projects` | Override or inspect the project. Rarely needed. |
 
 Entity types: `preference`, `decision`, `pattern`, `file`, `concept`, `tool`, `pitfall`, `convention`.
@@ -157,6 +159,20 @@ Settings (flags, or the environment variables in brackets):
 - `worklog pending` lists time not yet reported. After you copy it to a time-tracking system, run `worklog exported <project> <branch>` so it is not reported twice.
 
 The first run reads every transcript of the period and can take a minute for a heavy week. After that only changed files are read. The result is stored in the same database as the memory: on a signed-in machine, the server's, so the report covers every machine. Claude Code removes old transcripts after some weeks, so run a report before they go; the stored numbers stay.
+
+## Taste
+
+Task Runner learns how you want things from what you say, and every later session follows it. There is no approval step and nothing to write by hand.
+
+- When a message carries a directive, a correction or a preference ("always…", "don't…", "bundan sonra…", "too long"), the mod checks it in the background after the turn. The check is one model call over the session's own cached context, so the agent's work is not interrupted. A message without such words costs nothing.
+- A preference counts from the first time you say it. Saying it again makes it firmer. A different wish on the same point replaces the old one, and taking it back drops it.
+- Each preference has a scope: you everywhere, the organization, or one project.
+- The agent is told what was learned with your next prompt, and new sessions get the list at start.
+- Preferences live in the same database as the memory: on a signed-in machine, on your server, so all machines share them.
+
+`/taste` lists what was learned. `/taste off` stops learning for the current session, and `/taste on` starts it again. In a session that has already run, `/taste on` also reads what you said so far. The Taste tab of the panel lists the preferences with a button to forget each one. The `taste` plugin setting turns learning off by default.
+
+From the command line: `task-runner-mcp taste`, and `task-runner-mcp taste forget <id>`. Other MCP clients get the `taste` tool and the list at session start, but no automatic learning.
 
 ## Rules
 

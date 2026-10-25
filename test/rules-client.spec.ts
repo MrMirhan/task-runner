@@ -111,6 +111,12 @@ test("login, rules set and the session hook work together through the CLI", asyn
     assert.match(await run(["rules", "show"]), /Prefer small PRs\./);
     assert.match(await run(["rules", "devices"]), /test-box\t.*\(this device\)/);
 
+    // Preferences live on the server too and every new session gets them.
+    await run(["taste", "learn", "--data", JSON.stringify({ items: [{ scope: "global", area: "replies", rule: "Answer in Turkish." }] })]);
+    const next = JSON.parse(await run(["hook", "session-start"], JSON.stringify({ cwd: repo })));
+    assert.match(next.hookSpecificOutput.additionalContext, /How the user wants things[\s\S]*replies: Answer in Turkish\. \(said once\)/);
+    assert.equal(s.store.tasteList({ project: "acme-shop" })[0].rule, "Answer in Turkish.");
+
     // Signed in, memory goes to the server as well.
     await run(["note", "The", "checkout", "uses", "Stripe"]);
     assert.match(JSON.stringify(s.store.getContext({ project: "acme-shop", all: true })), /checkout uses Stripe/);

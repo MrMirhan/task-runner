@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { SCHEMA_VERSION } from "../src/core/schema.ts";
 import { test } from "node:test";
 import { StoreError } from "../src/core/errors.ts";
 import { memoryStore } from "./helpers.ts";
@@ -431,6 +432,6 @@ test("a v3 database upgrades and is reindexed with keywords", async () => {
   const db = openDb(":memory:");
   const store = new Store(db);
   store.upsertEntity({ project: P, name: "Old", entity_type: "concept", observations: ["kept fact"] });
-  assert.equal(db.get<{ value: string }>("SELECT value FROM schema_meta WHERE key = 'version'")?.value, "4");
+  assert.equal(db.get<{ value: string }>("SELECT value FROM schema_meta WHERE key = 'version'")?.value, String(SCHEMA_VERSION));
   assert.equal(new Store(db).recall({ project: P, q: "kept" }).entities.length, 1);
 });

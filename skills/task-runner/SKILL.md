@@ -9,6 +9,8 @@ Memory that survives sessions (a knowledge graph plus notes) and a task runner. 
 
 ## At session start
 
+The section "How the user wants things" lists preferences learned from what the user said. Follow them; when the current request says otherwise, the request wins and the preference is updated.
+
 A briefing of the most important facts is already in your context. For anything beyond it, call `recall` with a few keywords before you re-derive or re-ask. Search ignores accents and matches word starts and stems, so `calisma` finds `çalışma` and `migrations` finds `migration`. It does not match meaning: if the first search misses, try synonyms and the other language. `related` lists entities linked to the hits.
 
 ## While you work
@@ -20,7 +22,8 @@ Write down what you would want to know next time, when it happens:
 | A decision and its reason | `remember` with type `decision` |
 | A trap that cost time | `remember` with type `pitfall` |
 | A rule the project follows | `remember` with type `convention` |
-| How the user likes to work | `remember` with `scope: "global"` (holds in every project) |
+| How the user wants things done (a directive, a correction, a preference) | `taste` with action `learn` (in Claude Code the panel also learns these by itself) |
+| A fact about the user that holds in every project | `remember` with `scope: "global"` |
 | A repeatable approach | `remember` with type `pattern` |
 | What happened in this session | `save_memory` |
 

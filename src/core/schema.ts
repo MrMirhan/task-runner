@@ -189,6 +189,25 @@ const migrations: Array<(db: Db) => void> = [
       "INSERT INTO schema_meta (key, value) VALUES ('reindex', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value",
     );
   },
+  (db) => {
+    db.exec(`
+      CREATE TABLE taste (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        ref TEXT NOT NULL DEFAULT '',
+        area TEXT NOT NULL DEFAULT 'general',
+        rule TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        hits INTEGER NOT NULL DEFAULT 1,
+        replaced TEXT,
+        source TEXT NOT NULL DEFAULT 'prompt',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        valid_until INTEGER
+      );
+      CREATE INDEX idx_taste_scope ON taste(scope, ref, valid_until);
+    `);
+  },
 ];
 
 export const SCHEMA_VERSION = migrations.length;
