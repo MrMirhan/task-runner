@@ -29,7 +29,7 @@ Rules that keep the graph useful:
 - Keep the name short (80 characters at most). Put the sentence in `observations`.
 - One fact per item, under 1000 characters. Long text goes in `save_memory`.
 - `remember` on a name that exists adds facts to it. Duplicates are skipped.
-- `remember` returns `similar_existing` when a close match exists. Use that entity instead of a new one.
+- `remember` returns `similar_existing` when a close match exists: use that entity instead of a new one. It returns `link_suggestions` when your facts name entities that are not linked yet: call `link` for the ones that matter.
 - Connect related entities with `link` (`uses`, `depends_on`, `supersedes`, `decided_against`, `relates_to`, ...).
 - A fact is wrong or old: call `correct_fact` with the fact id from `recall` or `what_do_i_know`. Never add a second fact that contradicts the first.
 - Facts show their date. Check old facts against the code before you rely on them. The code wins.

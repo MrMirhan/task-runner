@@ -326,3 +326,22 @@ test("mergeProjects folds entities, facts, relations, notes and tasks into one k
   assert.deepEqual(store.listTaskGroups("new").map((g) => g.task_group).sort(), ["g", "g-merged"]);
   assert.throws(() => store.mergeProjects("new", "new"), /itself/);
 });
+
+test("facts that name another entity suggest a link until one exists", () => {
+  const { store } = memoryStore();
+  store.upsertEntity({ project: P, name: "Redis", entity_type: "tool" });
+  store.upsertEntity({ project: P, name: "Sessions", entity_type: "concept" });
+
+  const first = store.upsertEntity({
+    project: P, name: "Login flow", entity_type: "pattern",
+    observations: ["Keeps sessions in Redis with a 1h TTL"],
+  });
+  assert.deepEqual(first.link_suggestions?.sort(), ["Redis", "Sessions"]);
+
+  store.link({ project: P, from_name: "Login flow", to_name: "Redis", relation_type: "uses" });
+  const next = store.upsertEntity({ project: P, name: "Login flow", entity_type: "pattern", observations: ["Redis outage logs everyone out"] });
+  assert.equal(next.link_suggestions, undefined);
+
+  const word = store.upsertEntity({ project: P, name: "Notes", entity_type: "concept", observations: ["Redistribution is unrelated"] });
+  assert.equal(word.link_suggestions, undefined);
+});

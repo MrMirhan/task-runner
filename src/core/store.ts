@@ -47,6 +47,8 @@ export interface UpsertResult {
   is_new: boolean;
   observations_added: number;
   similar_existing?: Array<{ name: string; entity_type: string }>;
+  /** Existing entities named in the new facts that this entity is not linked to yet. */
+  link_suggestions?: string[];
 }
 
 export interface ExportData {
@@ -369,6 +371,10 @@ export class Store {
       if (!existing) {
         const similar = this.similarEntities(project, name, id);
         if (similar.length > 0) result.similar_existing = similar;
+      }
+      if (added.length > 0) {
+        const suggestions = this.linkSuggestions(project, id, (input.observations ?? []).concat(input.summary ?? ""));
+        if (suggestions.length > 0) result.link_suggestions = suggestions;
       }
       return result;
     });
@@ -973,6 +979,37 @@ export class Store {
       "INSERT INTO entities_fts(rowid, name, summary, facts) VALUES (?, ?, ?, ?)",
       e.seq, fold(e.name), fold(e.summary ?? ""), fold(facts?.facts ?? ""),
     );
+  }
+
+  private linkSuggestions(project: string, entityId: string, texts: string[]): string[] {
+    const haystack = texts.join(" \n ").toLowerCase();
+    if (haystack.trim().length < 4) return [];
+    const linked = new Set(
+      this.db
+        .all<{ other: string }>(
+          `SELECT CASE WHEN source_id = ? THEN target_id ELSE source_id END AS other
+           FROM relations WHERE (source_id = ? OR target_id = ?) AND valid_until IS NULL`,
+          entityId, entityId, entityId,
+        )
+        .map((r) => r.other),
+    );
+    const out: string[] = [];
+    for (const e of this.db.all<{ id: string; name: string }>(
+      "SELECT id, name FROM entities WHERE project_key IN (?, ?) AND valid_until IS NULL AND id <> ? ORDER BY importance DESC LIMIT 500",
+      project, GLOBAL_PROJECT, entityId,
+    )) {
+      const needle = e.name.toLowerCase();
+      if (needle.length < 3 || linked.has(e.id)) continue;
+      const at = haystack.indexOf(needle);
+      if (at < 0) continue;
+      const before = haystack[at - 1];
+      const after = haystack[at + needle.length];
+      const isWord = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
+      if (isWord(before) || isWord(after)) continue;
+      out.push(e.name);
+      if (out.length === 3) break;
+    }
+    return out;
   }
 
   private similarEntities(project: string, name: string, excludeId: string): Array<{ name: string; entity_type: string }> {
