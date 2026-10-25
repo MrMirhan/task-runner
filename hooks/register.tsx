@@ -331,6 +331,76 @@ function clock(seconds: number): string {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
 }
 
+// ─── Look ───
+// Colours that read on light and dark desktop themes: Claude's orange for you, a calm blue for the agent,
+// translucent greys for cards.
+const YOU = '#d97757'
+const AGENT = '#7c8cf8'
+const CARD = '#8e8e9314'
+const CARD_EDGE = '#8e8e9333'
+const CHIP = '#8e8e9326'
+const MUTED = '#8e8e93'
+const TYPE_COLOR: Record<string, string> = {
+  decision: '#7c8cf8',
+  pitfall: '#e5534b',
+  convention: '#3fb950',
+  pattern: '#d29922',
+  preference: '#d97757',
+  tool: '#39c5cf',
+  concept: '#a371f7',
+  file: '#8e8e93',
+}
+const STATUS_COLOR = { completed: '#3fb950', failed: '#e5534b', running: '#d29922', pending: '#8e8e93' } as Record<string, string> & { completed: string; failed: string; running: string; pending: string }
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+// A rounded track with two parts side by side: you and the agent, or done and the rest.
+function splitBarSvg(parts: Array<{ value: number; color: string }>, width: number, height = 8): string {
+  const total = Math.max(1, parts.reduce((n, p) => n + p.value, 0))
+  let x = 0
+  const rects = parts
+    .filter(p => p.value > 0)
+    .map(p => {
+      const w = Math.max(2, (p.value / total) * width)
+      const r = '<rect x="' + x.toFixed(1) + '" y="0" width="' + w.toFixed(1) + '" height="' + height + '" fill="' + p.color + '"/>'
+      x += w
+      return r
+    })
+    .join('')
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">' +
+    '<clipPath id="c"><rect width="' + width + '" height="' + height + '" rx="' + height / 2 + '"/></clipPath>' +
+    '<g clip-path="url(#c)"><rect width="' + width + '" height="' + height + '" fill="' + CHIP + '"/>' + rects + '</g></svg>'
+  )
+}
+
+// One stacked bar per day: you at the bottom, the agent on top, the day under it.
+function weekSvg(days: Array<{ day: string; you_s: number; agent_s: number }>, width: number, height = 120): string {
+  const n = Math.max(1, days.length)
+  const peak = Math.max(1, ...days.map(d => d.you_s + d.agent_s))
+  const slot = width / n
+  const bar = Math.min(28, slot * 0.6)
+  const chart = height - 18
+  const names = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+  const cols = days
+    .map((d, i) => {
+      const x = i * slot + (slot - bar) / 2
+      const hy = (d.you_s / peak) * chart
+      const ha = (d.agent_s / peak) * chart
+      const label = names[new Date(d.day + 'T12:00:00').getDay()] ?? d.day.slice(5)
+      return (
+        '<rect x="' + x.toFixed(1) + '" y="' + (chart - hy - ha).toFixed(1) + '" width="' + bar.toFixed(1) + '" height="' + Math.max(0, ha).toFixed(1) + '" rx="3" fill="' + AGENT + '"/>' +
+        '<rect x="' + x.toFixed(1) + '" y="' + (chart - hy).toFixed(1) + '" width="' + bar.toFixed(1) + '" height="' + Math.max(0, hy).toFixed(1) + '" rx="3" fill="' + YOU + '"/>' +
+        '<text x="' + (x + bar / 2).toFixed(1) + '" y="' + (height - 4) + '" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" fill="' + MUTED + '">' + esc(label) + '</text>'
+      )
+    })
+    .join('')
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">' + cols + '</svg>'
+}
+
+// Pixels to the pane's rows on a desktop, for paging. A row is about 15 CSS pixels there.
+const pxRows = (px: number) => px / 15
+
 // One entry in the pane's list: what it draws and how many rows it takes, so the list can be paged.
 type Line = { key: string; node: JSX.Element; rows: number }
 
@@ -604,6 +674,8 @@ export const register: Register = (on, options) => {
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
     const Input = 'Input' in ui ? ui.Input : undefined
+    // resolve hands over every element on every surface; the terminal cannot draw an SVG.
+    const Svg = e.surface !== 'terminal' && 'Svg' in ui ? ui.Svg : undefined
     const graphic = e.surface !== 'terminal'
     const snapshot = await read($, snapshotValue)
     const tab = await read($, tabValue)
@@ -616,8 +688,9 @@ export const register: Register = (on, options) => {
     const taste = await read($, tasteValue)
     const tasteOn = await tasteIsOn($, tasteByDefault)
     const width = Math.max(24, e.props.bodyColumns)
+    // Desktop columns are narrower than its pixels; this is the drawing width the charts get.
+    const chartWidth = Math.max(160, Math.min(560, width * 7 - 40))
     const fullHeight = e.props.scroll?.bodyRows || undefined
-    const redraw = () => $.ui.invalidate('ui.render')
     shownTab = tab
 
     const select = async (id: Tab) => {
@@ -627,110 +700,208 @@ export const register: Register = (on, options) => {
       if (id === 'session') await loadSession($)
       if (id === 'taste') await loadTaste($)
     }
+    const reload = () => Promise.all([refresh($), loadSession($, true), loadTaste($)])
 
-    const tabs = (
-      <Box key="tabs" flexDirection="row" columnGap={1} flexWrap="wrap" flexShrink={0}>
-        {TABS.map((item, i) =>
-          graphic ? (
-            <Button
-              key={'tab-' + item.id}
-              label={item.label}
-              variant={tab === item.id ? 'primary' : 'secondary'}
-              onPress={() => select(item.id)}
-            />
+    // ── small pieces ──
+    const chip = (key: string, text: string, color?: string) =>
+      graphic ? (
+        <Text key={key} size="caption" color={color} backgroundColor={CHIP}>{' ' + text + ' '}</Text>
+      ) : (
+        <Text key={key} color={color} dimColor={!color}>{text}</Text>
+      )
+    const section = (key: string, title: string, count?: number): Line =>
+      line(
+        key,
+        <Box key={key} flexDirection="row" columnGap={1} alignItems="center" marginTop={graphic ? 'sm' : 0}>
+          {graphic ? (
+            <Text size="footnote" weight="semibold" dimColor>{title.toUpperCase()}</Text>
           ) : (
-            <Button key={'tab-' + item.id} plain hotkey={String(i + 1)} dimColor={tab !== item.id} onPress={() => select(item.id)}>
-              {(tab === item.id ? '[' + item.label + ']' : item.label)}
-            </Button>
-          ),
-        )}
-        {graphic ? (
-          <Button key="refresh" label="↻" onPress={() => Promise.all([refresh($), loadSession($, true)])} />
+            <Text bold color="claude">{title}</Text>
+          )}
+          {count !== undefined ? <Text dimColor size="caption">{String(count)}</Text> : null}
+        </Box>,
+        graphic ? 2.2 : 1,
+      )
+    const bar = (key: string, parts: Array<{ value: number; color: string }>, w = chartWidth) =>
+      Svg ? (
+        <Svg key={key} alt="progress" width={w} height={8} source={splitBarSvg(parts, w)} />
+      ) : (
+        <Text key={key}>
+          {parts.map((p, i) => {
+            const total = Math.max(1, parts.reduce((n, q) => n + q.value, 0))
+            const cells = Math.round((p.value / total) * 20)
+            return <Text key={key + '-' + i} color={p.color}>{(i === parts.length - 1 ? '░' : '█').repeat(cells)}</Text>
+          })}
+        </Text>
+      )
+    function line(key: string, node: JSX.Element, rows: number): Line {
+      return { key, node, rows }
+    }
+    const textRows = (text: string, extra = 0) => (graphic ? rowsFor(text, width - 6) * 1.45 + extra : rowsFor(text, width - 2))
+    // A row of the list: an optional coloured mark, the text, a quiet note at the end.
+    const row = (key: string, text: string, opts: { mark?: string; markColor?: string; note?: string; dim?: boolean; onPress?: () => unknown } = {}): Line => {
+      const body = (
+        <Text wrap="truncate-end" dimColor={opts.dim}>
+          {opts.mark ? <Text color={opts.markColor}>{opts.mark + ' '}</Text> : null}
+          {text}
+          {opts.note ? <Text dimColor size="caption">{'  ' + opts.note}</Text> : null}
+        </Text>
+      )
+      return line(
+        key,
+        opts.onPress ? (
+          <Button key={key} plain onPress={opts.onPress}>
+            {opts.mark ? <Text color={opts.markColor}>{opts.mark + ' '}</Text> : ''}
+            {text}
+            {opts.note ? <Text dimColor>{'  ' + opts.note}</Text> : ''}
+          </Button>
         ) : (
-          <Button key="refresh" label="↻" plain hotkey="r" onPress={() => Promise.all([refresh($), loadSession($, true)])} />
-        )}
-      </Box>
-    )
+          <Box key={key}>{body}</Box>
+        ),
+        graphic ? (opts.onPress ? 2.1 : 1.6) : 1,
+      )
+    }
+    const wrapped = (key: string, text: string, dim = true): Line =>
+      line(key, <Text key={key} dimColor={dim}>{text}</Text>, textRows(text))
+    const card = (key: string, children: JSX.Element[], rows: number): Line =>
+      line(
+        key,
+        graphic ? (
+          <Box key={key} flexDirection="column" rowGap="xs" backgroundColor={CARD} borderStyle="round" borderColor={CARD_EDGE} padding="sm">
+            {children}
+          </Box>
+        ) : (
+          <Box key={key} flexDirection="column" borderStyle="round" paddingX={1}>{children}</Box>
+        ),
+        graphic ? rows * 1.45 + 2.5 : rows + 2,
+      )
+    const stat = (key: string, label: string, value: string, color: string) =>
+      graphic ? (
+        <Box key={key} flexDirection="column" flexGrow={1} backgroundColor={CARD} borderStyle="round" borderColor={CARD_EDGE} paddingX="sm" paddingY="xs">
+          <Text size="caption" dimColor>{label}</Text>
+          <Text size="title" weight="semibold" color={color}>{value}</Text>
+        </Box>
+      ) : (
+        <Text key={key}>
+          <Text color={color} bold>{value}</Text> <Text dimColor>{label}</Text>
+        </Text>
+      )
 
-    const line = (key: string, node: JSX.Element, text = '', rows?: number): Line => ({
-      key,
-      node,
-      rows: rows ?? (graphic ? rowsFor(text, width - 2) : 1),
-    })
-    const plain = (key: string, text: string, props: { dimColor?: boolean; bold?: boolean } = {}) =>
-      line(key, <Text key={key} dimColor={props.dimColor} bold={props.bold} wrap="truncate-end">{text}</Text>, text)
-    const wrapped = (key: string, text: string, props: { dimColor?: boolean; bold?: boolean } = {}) =>
-      line(key, <Text key={key} dimColor={props.dimColor} bold={props.bold}>{text}</Text>, text, rowsFor(text, width - 2))
-
+    // ── tab content ──
     let lines: Line[] = []
     let top: JSX.Element | null = null
+    let topRows = 0
 
     if (!snapshot) {
-      lines = [plain('loading', 'Loading project memory…', { dimColor: true })]
+      lines = [wrapped('loading', 'Loading project memory…')]
     } else if (tab === 'session') {
       const s = session
       if (!s) {
-        lines = [plain('session-loading', 'Reading this session…', { dimColor: true })]
+        lines = [wrapped('session-loading', 'Reading this session…')]
       } else {
-        lines.push(plain('s-head', 'This session' + (s.started_at ? ' · since ' + clock(s.started_at) : ''), { bold: true }))
-        lines.push(plain('s-time', 'You ' + hours(s.you_s) + ' · agent ' + hours(s.agent_s) + ' · wall ' + hours(s.wall_s)))
-        lines.push(
-          plain('s-work', s.prompts + ' prompt(s) · ' + s.edits + ' file edit(s) · ' + commits.length + ' commit(s)', { dimColor: true }),
+        top = (
+          <Box key="s-top" flexDirection="column" rowGap={graphic ? 'sm' : 0} flexShrink={0}>
+            <Box flexDirection="row" columnGap={graphic ? 'sm' : 2} flexWrap="wrap">
+              {stat('st-you', 'You', hours(s.you_s), YOU)}
+              {stat('st-agent', 'Agent', hours(s.agent_s), AGENT)}
+              {stat('st-wall', 'Wall clock', hours(s.wall_s), graphic ? 'text' : 'text')}
+            </Box>
+            {bar('s-split', [{ value: s.you_s, color: YOU }, { value: s.agent_s, color: AGENT }])}
+            <Text key="s-work" dimColor wrap="truncate-end" size="caption">
+              {(s.started_at ? 'since ' + clock(s.started_at) + ' · ' : '') + s.prompts + ' prompt(s) · ' + s.edits + ' file edit(s) · ' + commits.length + ' commit(s)'}
+            </Text>
+            {graphic ? (
+              <Text key="s-legend" size="caption" dimColor>
+                <Text color={YOU}>● </Text>you <Text color={AGENT}>  ● </Text>agent
+              </Text>
+            ) : null}
+          </Box>
         )
-        if (s.first_prompt) lines.push(plain('s-first', 'Started from: ' + s.first_prompt, { dimColor: true }))
+        topRows = graphic ? 9.5 : 4
+        if (s.first_prompt) {
+          lines.push(section('s-first-head', 'Started from'))
+          lines.push(line('s-first', <Text key="s-first" italic dimColor wrap="truncate-end">{'“' + s.first_prompt + '”'}</Text>, graphic ? 1.6 : 1))
+        }
         if (s.scopes.length > 1) {
-          lines.push(plain('s-scopes', 'Worked in: ' + s.scopes.map(x => x.project_key + ' ' + hours(x.secs)).join(', '), { dimColor: true }))
+          lines.push(section('s-scopes-head', 'Worked in', s.scopes.length))
+          const most = Math.max(1, ...s.scopes.map(x => x.secs))
+          for (const x of s.scopes) {
+            lines.push(
+              line(
+                'sw-' + x.project_key,
+                <Box key={'sw-' + x.project_key} flexDirection="row" columnGap={1} alignItems="center">
+                  <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                    <Text wrap="truncate-end">{x.project_key}</Text>
+                  </Box>
+                  {bar('swb-' + x.project_key, [{ value: x.secs, color: YOU }, { value: most - x.secs, color: 'transparent' }], 80)}
+                  <Text dimColor size="caption">{hours(x.secs)}</Text>
+                </Box>,
+                graphic ? 1.6 : 1,
+              ),
+            )
+          }
         }
         const group = snapshot.tasks
         if (group && group.summary.pending + group.summary.running > 0) {
-          lines.push(
-            plain(
-              's-tasks',
-              group.summary.task_group + ' ' + bar(group.summary.completed, group.summary.total, 10) + ' ' + group.summary.completed + '/' + group.summary.total,
-            ),
-          )
+          lines.push(section('s-tasks-head', 'Task group'))
+          lines.push(row('s-tasks', group.summary.task_group + '  ' + group.summary.completed + '/' + group.summary.total, { mark: '▶', markColor: STATUS_COLOR.running, onPress: () => select('tasks') }))
         }
         const saved = s.entities.length + s.notes.length
-        lines.push(plain('s-saved', saved ? 'Saved to memory this session (' + saved + ')' : 'Nothing saved to memory yet', { bold: true }))
-        if (!saved) {
-          lines.push(wrapped('s-saved-hint', 'The agent saves with remember and save_memory. /remember <text> adds a note.', { dimColor: true }))
-        }
+        lines.push(section('s-saved', saved ? 'Saved to memory this session (' + saved + ')' : 'Nothing saved to memory yet'))
+        if (!saved) lines.push(wrapped('s-saved-hint', 'The agent saves with remember and save_memory. /remember <text> adds a note.'))
         for (const entity of s.entities) {
-          const mark = entity.is_new ? '+ ' : '~ '
-          const extra = entity.is_new ? '' : ' +' + entity.new_facts + ' fact(s)'
           lines.push(
-            line(
-              'se-' + entity.entity_type + '-' + entity.name,
-              <Button key={'se-' + entity.entity_type + '-' + entity.name} plain onPress={() => select('graph').then(() => openDetail($, entity.name))}>
-                {mark + entity.name} <Text dimColor>{entity.entity_type + extra}</Text>
-              </Button>,
-              mark + entity.name + entity.entity_type + extra,
-              graphic ? 2 : 1,
-            ),
+            row('se-' + entity.entity_type + '-' + entity.name, entity.name, {
+              mark: entity.is_new ? '＋' : '↻',
+              markColor: TYPE_COLOR[entity.entity_type] ?? MUTED,
+              note: entity.entity_type + (entity.is_new ? '' : ' · +' + entity.new_facts + ' fact(s)'),
+              onPress: () => select('graph').then(() => openDetail($, entity.name)),
+            }),
           )
         }
-        for (const note of s.notes) lines.push(plain('sn-' + note.id, clock(note.created_at) + ' [' + note.type + '] ' + note.title))
-        if (commits.length) {
-          lines.push(plain('s-commits', 'Commits', { bold: true }))
-          commits.forEach((subject, i) => lines.push(plain('sc-' + i, subject, { dimColor: true })))
+        for (const note of s.notes) {
+          lines.push(row('sn-' + note.id, note.title, { mark: note.type === 'change' ? '⎇' : '✎', markColor: MUTED, note: clock(note.created_at) + ' · ' + note.type }))
         }
+        if (commits.length) {
+          lines.push(section('s-commits', 'Commits', commits.length))
+          commits.forEach((subject, i) => {
+            const [hash, ...rest] = subject.split(' ')
+            lines.push(
+              line(
+                'sc-' + i,
+                <Text key={'sc-' + i} wrap="truncate-end">
+                  <Text color={AGENT} mono>{hash + ' '}</Text>
+                  {rest.join(' ')}
+                </Text>,
+                graphic ? 1.6 : 1,
+              ),
+            )
+          })
+        }
+        lines.push(section('s-taste-head', 'Taste'))
         lines.push(
-          plain('s-taste', 'Taste: ' + (tasteOn ? 'learning' : 'off') + ' · ' + (taste?.length ?? 0) + ' preference(s) followed', { dimColor: true }),
+          row('s-taste', (tasteOn ? 'Learning' : 'Off') + ' · ' + (taste?.length ?? 0) + ' preference(s) followed', {
+            mark: tasteOn ? '●' : '○',
+            markColor: tasteOn ? '#3fb950' : MUTED,
+            onPress: () => select('taste'),
+          }),
         )
         if (rules) {
           lines.push(
-            plain(
-              's-rules',
-              'Rules: ' + rules.parts.length + ' section(s), ' + rules.chars + ' chars' + (rules.pending.length ? ' · ' + rules.pending.length + ' to review' : ''),
-              { dimColor: true },
-            ),
+            row('s-rules', rules.parts.length + ' rule section(s), ' + rules.chars + ' chars' + (rules.pending.length ? ' · ' + rules.pending.length + ' to review' : ''), {
+              mark: '§',
+              markColor: rules.pending.length ? STATUS_COLOR.running : MUTED,
+              onPress: () => select('rules'),
+            }),
           )
         }
       }
     } else if (tab === 'taste') {
       top = (
-        <Box key="taste-head" flexDirection="row" columnGap={1} flexShrink={0}>
-          <Text bold>{tasteOn ? 'Learning from what you say' : 'Learning is off in this session'}</Text>
+        <Box key="taste-head" flexDirection="row" columnGap={1} alignItems="center" flexShrink={0}>
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text weight="semibold" bold>{tasteOn ? 'Learning from what you say' : 'Learning is off in this session'}</Text>
+          </Box>
           <Button
             key="taste-toggle"
             label={tasteOn ? 'Turn off' : 'Turn on'}
@@ -741,86 +912,115 @@ export const register: Register = (on, options) => {
           />
         </Box>
       )
+      topRows = graphic ? 3 : 1
       const prefs = taste ?? []
       if (prefs.length === 0) {
-        lines.push(wrapped('taste-empty', 'Nothing learned yet. Say how you want things ("always…", "don\'t…", "bundan sonra…") and it is kept for every session.', { dimColor: true }))
+        lines.push(wrapped('taste-empty', 'Nothing learned yet. Say how you want things ("always…", "don\'t…", "bundan sonra…") and it is kept for every session.'))
       }
       for (const p of prefs) {
         const how = p.confidence >= 0.85 ? 'firm' : p.hits > 1 ? p.hits + '×' : 'once'
         const where = p.scope === 'global' ? 'everywhere' : p.scope === 'org' ? 'org ' + p.ref : 'this project'
-        const text = p.area + ': ' + p.rule + ' ' + how + ' · ' + where
-        lines.push(
-          line(
-            'taste-' + p.id,
-            <Box key={'taste-' + p.id} flexDirection="row" columnGap={1}>
-              <Box flexGrow={1} flexShrink={1} minWidth={0}>
-                <Text wrap="truncate-end">
-                  <Text dimColor>{p.area}</Text> {p.rule} <Text dimColor>{how + ' · ' + where}</Text>
-                </Text>
-              </Box>
-              <Button
-                key={'taste-forget-' + p.id}
-                label="×"
-                plain
-                onPress={async () => {
-                  await cliText($, ['taste', 'forget', p.id])
-                  await loadTaste($)
-                }}
-              />
-            </Box>,
-            text,
-            graphic ? 2 : 1,
-          ),
+        const forgetButton = (
+          <Button
+            key={'taste-forget-' + p.id}
+            label="Forget"
+            plain
+            dimColor
+            onPress={async () => {
+              await cliText($, ['taste', 'forget', p.id])
+              await loadTaste($)
+            }}
+          />
         )
+        if (graphic) {
+          lines.push(
+            card(
+              'taste-' + p.id,
+              [
+                <Box key={'th-' + p.id} flexDirection="row" columnGap="xs" alignItems="center">
+                  {chip('ta-' + p.id, p.area, YOU)}
+                  {chip('tw-' + p.id, where)}
+                  <Box flexGrow={1} />
+                  {forgetButton}
+                </Box>,
+                <Text key={'tr-' + p.id}>{p.rule}</Text>,
+                <Box key={'tc-' + p.id} flexDirection="row" columnGap="xs" alignItems="center">
+                  {bar('tb-' + p.id, [{ value: p.confidence, color: YOU }, { value: 1 - p.confidence, color: 'transparent' }], 90)}
+                  <Text size="caption" dimColor>{how + ' · ' + where}</Text>
+                </Box>,
+              ],
+              rowsFor(p.rule, width - 6) + 3,
+            ),
+          )
+        } else {
+          lines.push(
+            line(
+              'taste-' + p.id,
+              <Box key={'taste-' + p.id} flexDirection="row" columnGap={1}>
+                <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                  <Text wrap="truncate-end">
+                    <Text color="claude">{p.area}</Text> {p.rule} <Text dimColor>{how + ' · ' + where}</Text>
+                  </Text>
+                </Box>
+                {forgetButton}
+              </Box>,
+              1,
+            ),
+          )
+        }
       }
     } else if (tab === 'tasks') {
       const group = snapshot.tasks
       if (!group) {
-        lines = [wrapped('no-tasks', 'No task group yet. Multi-step work shows up here once the agent calls create_task_group.', { dimColor: true })]
+        lines = [wrapped('no-tasks', 'No task group yet. Multi-step work shows up here once the agent calls create_task_group.')]
       } else {
+        const sum = group.summary
         top = (
-          <Text key="group-head" bold wrap="truncate-end">
-            {group.summary.task_group} {bar(group.summary.completed, group.summary.total, Math.min(20, width - 16))}{' '}
-            {group.summary.completed}/{group.summary.total}
-            {group.summary.failed ? ' · ' + group.summary.failed + ' failed' : ''}
-          </Text>
+          <Box key="group-top" flexDirection="column" rowGap="xs" flexShrink={0}>
+            <Text key="group-head" bold weight="semibold" wrap="truncate-end">
+              {sum.task_group + '  ' + sum.completed + '/' + sum.total + (sum.failed ? ' · ' + sum.failed + ' failed' : '')}
+            </Text>
+            {bar('group-bar', [
+              { value: sum.completed, color: STATUS_COLOR.completed },
+              { value: sum.failed, color: STATUS_COLOR.failed },
+              { value: sum.running, color: STATUS_COLOR.running },
+              { value: sum.pending, color: 'transparent' },
+            ])}
+          </Box>
         )
+        topRows = graphic ? 3 : 2
         for (const item of group.items) {
           lines.push(
-            plain('task-' + item.id, (GLYPH[item.status] ?? '?') + ' ' + item.id + ' ' + item.title, {
-              dimColor: item.status === 'completed' || item.status === 'pending',
+            row('task-' + item.id, item.id + ' ' + item.title, {
+              mark: GLYPH[item.status] ?? '?',
+              markColor: STATUS_COLOR[item.status],
+              dim: item.status === 'completed' || item.status === 'pending',
             }),
           )
-          if (item.error) lines.push(line('task-err-' + item.id, <Text key={'task-err-' + item.id} color="red">{'    ' + item.error}</Text>, item.error))
+          if (item.error) lines.push(line('task-err-' + item.id, <Text key={'task-err-' + item.id} color="error">{'    ' + item.error}</Text>, textRows(item.error)))
         }
       }
     } else if (tab === 'notes') {
       lines = snapshot.notes.length
-        ? snapshot.notes.map(note =>
-            line(
-              'note-' + note.id,
-              <Text key={'note-' + note.id} wrap="truncate-end">
-                <Text dimColor>{day(note.created_at)} {note.type} </Text>
-                {note.title}
-              </Text>,
-              note.title + note.type + '0000-00-00 ',
-            ),
-          )
-        : [plain('no-notes', 'No notes yet. /remember <text> saves one.', { dimColor: true })]
+        ? snapshot.notes.map(note => row('note-' + note.id, note.title, { mark: '✎', markColor: MUTED, note: day(note.created_at) + ' · ' + note.type }))
+        : [wrapped('no-notes', 'No notes yet. /remember <text> saves one.')]
     } else if (tab === 'graph') {
       if (detail) {
         top = (
-          <Box key="detail" flexDirection="column" borderStyle="round" paddingX={1} flexShrink={0}>
-            <Text bold wrap="truncate-end">
-              {detail.name} <Text dimColor>({detail.type})</Text>
-            </Text>
-            {detail.summary ? <Text wrap="truncate-end">{detail.summary}</Text> : null}
-            {detail.facts.slice(0, 6).map(fact => (
-              <Text wrap="truncate-end">• {fact}</Text>
+          <Box key="detail" flexDirection="column" rowGap="xs" backgroundColor={graphic ? CARD : undefined} borderStyle="round" borderColor={graphic ? CARD_EDGE : undefined} padding={graphic ? 'sm' : undefined} paddingX={graphic ? undefined : 1} flexShrink={0}>
+            <Box flexDirection="row" columnGap="xs" alignItems="center">
+              <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                <Text bold weight="semibold" size="heading" wrap="truncate-end">{detail.name}</Text>
+              </Box>
+              {chip('detail-type', detail.type, TYPE_COLOR[detail.type])}
+            </Box>
+            {detail.summary ? <Text dimColor wrap="truncate-end">{detail.summary}</Text> : null}
+            {detail.facts.slice(0, 5).map((fact, i) => (
+              <Text key={'df-' + i} wrap="truncate-end">• {fact}</Text>
             ))}
-            {detail.facts.length > 6 ? <Text dimColor>+{detail.facts.length - 6} more fact(s)</Text> : null}
-            {detail.relations.slice(0, 4).map(relation => (
-              <Text dimColor wrap="truncate-end">↔ {relation}</Text>
+            {detail.facts.length > 5 ? <Text dimColor size="caption">+{detail.facts.length - 5} more fact(s)</Text> : null}
+            {detail.relations.slice(0, 3).map((relation, i) => (
+              <Text key={'dr-' + i} dimColor size="caption" wrap="truncate-end">↔ {relation}</Text>
             ))}
             <Box flexDirection="row" columnGap={1}>
               <Button key="close-detail" label="Close" onPress={() => update($, detailValue, () => null)} />
@@ -828,134 +1028,175 @@ export const register: Register = (on, options) => {
             </Box>
           </Box>
         )
+        topRows = graphic ? 4 + Math.min(5, detail.facts.length) * 1.45 + Math.min(3, detail.relations.length) * 1.2 + 4 : 4 + Math.min(5, detail.facts.length) + Math.min(3, detail.relations.length) + 2
       }
       lines = snapshot.entities.length
         ? snapshot.entities.map(entity =>
-            line(
-              entity.id,
-              <Button key={entity.id} plain onPress={() => openDetail($, entity.name)}>
-                {dots(entity.importance)} {entity.name} <Text dimColor>{entity.entity_type}</Text>
-              </Button>,
-              entity.name + entity.entity_type + '●●●●● ',
-              graphic ? 2 : 1,
-            ),
+            row(entity.id, entity.name, {
+              mark: '●',
+              markColor: TYPE_COLOR[entity.entity_type] ?? MUTED,
+              note: entity.entity_type + ' ' + dots(entity.importance),
+              onPress: () => openDetail($, entity.name),
+            }),
           )
-        : [plain('graph-empty', 'The graph is empty. The agent fills it with remember.', { dimColor: true })]
+        : [wrapped('graph-empty', 'The graph is empty. The agent fills it with remember.')]
     } else if (tab === 'rules') {
       if (!rules) {
-        lines = [plain('rules-loading', 'Reading your rules…', { dimColor: true })]
+        lines = [wrapped('rules-loading', 'Reading your rules…')]
       } else {
-        lines.push(plain('rules-head', 'Rules for this session (' + rules.chars + ' characters)', { bold: true }))
-        lines.push(plain('rules-source', 'from ' + rules.source, { dimColor: true }))
-        if (rules.parts.length === 0) {
-          lines.push(wrapped('rules-none', 'No rules yet. Add some with `task-runner-mcp rules set "..."` or on the web page.', { dimColor: true }))
-        }
-        rules.parts.forEach((part, i) =>
-          lines.push(
-            line(
-              'part-' + i,
-              <Text key={'part-' + i} wrap="truncate-end">
-                · {part.label} <Text dimColor>{part.chars} chars</Text>
-              </Text>,
-              part.label,
-            ),
-          ),
-        )
-        lines.push(plain('pending-head', rules.pending.length ? 'Waiting for your decision' : 'No proposals waiting', { bold: true }))
+        lines.push(line('rules-head', <Text key="rules-head" bold weight="semibold">{'Rules for this session (' + rules.chars + ' characters)'}</Text>, graphic ? 1.6 : 1))
+        lines.push(row('rules-source', 'from ' + rules.source, { dim: true }))
+        if (rules.parts.length === 0) lines.push(wrapped('rules-none', 'No rules yet. Add some with `task-runner-mcp rules set "..."` or on the web page.'))
+        rules.parts.forEach((part, i) => lines.push(row('part-' + i, part.label + ' ' + part.chars + ' chars', { mark: '§', markColor: MUTED })))
+        lines.push(section('pending-head', rules.pending.length ? 'Waiting for your decision' : 'No proposals waiting'))
         for (const proposal of rules.pending) {
-          const text = proposal.text + (proposal.reason ? ' why: ' + proposal.reason : '')
           lines.push(
-            line(
+            card(
               'proposal-' + proposal.id,
-              <Box key={'proposal-' + proposal.id} flexDirection="column" borderStyle="round" paddingX={1}>
-                <Text bold wrap="truncate-end">
+              [
+                <Text key={'pw-' + proposal.id} bold weight="semibold" wrap="truncate-end">
                   {proposal.where} <Text dimColor>{proposal.mode} by {proposal.author}</Text>
-                </Text>
-                {proposal.reason ? <Text dimColor wrap="truncate-end">why: {proposal.reason}</Text> : null}
-                <Text>{proposal.text}</Text>
-                <Box flexDirection="row" columnGap={1}>
+                </Text>,
+                ...(proposal.reason ? [<Text key={'py-' + proposal.id} dimColor size="caption" wrap="truncate-end">why: {proposal.reason}</Text>] : []),
+                <Text key={'pt-' + proposal.id}>{proposal.text}</Text>,
+                <Box key={'pb-' + proposal.id} flexDirection="row" columnGap={1}>
                   <Button key={'approve-' + proposal.id} label="Approve" variant="primary" onPress={() => decide($, 'approve', proposal.id)} />
                   <Button key={'reject-' + proposal.id} label="Reject" onPress={() => decide($, 'reject', proposal.id)} />
-                </Box>
-              </Box>,
-              text,
-              rowsFor(proposal.text, width - 4) * (graphic ? 1.5 : 1) + (proposal.reason ? 1 : 0) + (graphic ? 6 : 4),
+                </Box>,
+              ],
+              rowsFor(proposal.text, width - 6) + (proposal.reason ? 1 : 0) + 3,
             ),
           )
         }
       }
     } else if (tab === 'time') {
       if (!worklog) {
-        lines = [wrapped('time-loading', 'Reading the session transcripts… the first run can take a minute.', { dimColor: true })]
+        lines = [wrapped('time-loading', 'Reading the session transcripts… the first run can take a minute.')]
       } else {
-        const peak = Math.max(1, ...worklog.days.map(d => d.you_s + d.agent_s))
-        lines.push(plain('time-label', worklog.label, { bold: true }))
-        lines.push(plain('time-total', 'You ' + hours(worklog.totals.you_s) + ' · agent ' + hours(worklog.totals.agent_s) + ' · wall ' + hours(worklog.totals.wall_s)))
-        lines.push(plain('time-note', 'Agent time adds up across parallel sessions.', { dimColor: true }))
-        for (const d of worklog.days) {
-          lines.push(
-            line(
-              'day-' + d.day,
-              <Text key={'day-' + d.day} wrap="truncate-end">
-                <Text dimColor>{d.day.slice(5)} </Text>
-                {bar(d.you_s + d.agent_s, peak, 16)} {hours(d.you_s)} / {hours(d.agent_s)}
-              </Text>,
-            ),
-          )
+        top = (
+          <Box key="time-top" flexDirection="column" rowGap={graphic ? 'sm' : 0} flexShrink={0}>
+            <Text key="time-label" dimColor size="caption">{worklog.label}</Text>
+            <Box flexDirection="row" columnGap={graphic ? 'sm' : 2} flexWrap="wrap">
+              {stat('tt-you', 'You', hours(worklog.totals.you_s), YOU)}
+              {stat('tt-agent', 'Agent', hours(worklog.totals.agent_s), AGENT)}
+              {stat('tt-wall', 'Wall clock', hours(worklog.totals.wall_s), 'text')}
+            </Box>
+            {Svg ? <Svg key="week" alt="time per day" width={chartWidth} height={120} source={weekSvg(worklog.days, chartWidth)} /> : null}
+          </Box>
+        )
+        topRows = graphic ? 7 + pxRows(120) + 1 : 2
+        if (!Svg) {
+          const peak = Math.max(1, ...worklog.days.map(d => d.you_s + d.agent_s))
+          for (const d of worklog.days) {
+            lines.push(
+              line(
+                'day-' + d.day,
+                <Text key={'day-' + d.day} wrap="truncate-end">
+                  <Text dimColor>{d.day.slice(5)} </Text>
+                  <Text color={YOU}>{'█'.repeat(Math.round((d.you_s / peak) * 16))}</Text>
+                  <Text color={AGENT}>{'█'.repeat(Math.round((d.agent_s / peak) * 16))}</Text>
+                  {' ' + hours(d.you_s) + ' / ' + hours(d.agent_s)}
+                </Text>,
+                1,
+              ),
+            )
+          }
         }
-        worklog.rows.forEach((row, i) =>
+        lines.push(section('time-tasks', 'By task', worklog.rows.length))
+        const most = Math.max(1, ...worklog.rows.map(r => r.you_s + r.agent_s))
+        worklog.rows.forEach((r, i) =>
           lines.push(
             line(
               'row-' + i,
-              <Text key={'row-' + i} wrap="truncate-end">
-                <Text bold>{row.label}</Text> <Text dimColor>{row.project} · {row.kind}</Text> you {hours(row.you_s)} · agent{' '}
-                {hours(row.agent_s)}
-              </Text>,
-              row.label + row.project + row.kind + ' you 00h 00m · agent 00h 00m',
+              <Box key={'row-' + i} flexDirection="row" columnGap={1} alignItems="center">
+                <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                  <Text wrap="truncate-end">
+                    <Text bold>{r.label}</Text> <Text dimColor>{r.project} · {r.kind}</Text>
+                  </Text>
+                </Box>
+                {Svg ? bar('rb-' + i, [{ value: r.you_s, color: YOU }, { value: r.agent_s, color: AGENT }, { value: most - r.you_s - r.agent_s, color: 'transparent' }], 90) : null}
+                <Text dimColor size="caption">{'you ' + hours(r.you_s) + ' · agent ' + hours(r.agent_s)}</Text>
+              </Box>,
+              graphic ? 1.7 : 1,
             ),
           ),
         )
-        lines.push(plain('time-more', '/worklog prints the full report with notes and commits.', { dimColor: true }))
+        lines.push(wrapped('time-more', '/worklog prints the full report with notes and commits.'))
       }
     } else {
       top = Input ? (
-        <Input
-          key="query"
-          label="Search"
-          placeholder="keywords, any language"
-          value={search?.query ?? ''}
-          submitLabel="search"
-          onSubmit={text => runSearch($, text)}
-        />
+        <Input key="query" label="Search" placeholder="keywords, any language" value={search?.query ?? ''} submitLabel="search" onSubmit={text => runSearch($, text)} />
       ) : (
         <Text key="query-hint" dimColor>Type /recall &lt;keywords&gt; to search.</Text>
       )
-      if (search && search.entities.length === 0 && search.notes.length === 0) lines.push(plain('nothing', 'Nothing found.', { dimColor: true }))
+      topRows = graphic ? 3.5 : 2
+      if (search && search.entities.length === 0 && search.notes.length === 0) lines.push(wrapped('nothing', 'Nothing found.'))
       for (const entity of search?.entities ?? []) {
-        const text = entity.name + ' ' + entity.entity_type + ' ' + entity.facts.join('; ')
+        const text = entity.facts.join('; ')
         lines.push(
           line(
             'hit-' + entity.entity_type + '-' + entity.name,
-            <Text key={'hit-' + entity.entity_type + '-' + entity.name}>
-              <Text bold>{entity.name}</Text> <Text dimColor>{entity.entity_type}</Text> {entity.facts.join('; ')}
-            </Text>,
-            text,
-            rowsFor(text, width - 2),
+            <Box key={'hit-' + entity.entity_type + '-' + entity.name} flexDirection="column">
+              <Text wrap="truncate-end">
+                <Text color={TYPE_COLOR[entity.entity_type] ?? MUTED}>● </Text>
+                <Text bold>{entity.name}</Text> <Text dimColor size="caption">{entity.entity_type}</Text>
+              </Text>
+              <Text dimColor>{text}</Text>
+            </Box>,
+            (graphic ? 1.6 : 1) + textRows(text),
           ),
         )
       }
-      ;(search?.notes ?? []).forEach((note, i) => lines.push(plain('hit-note-' + i, note, { dimColor: true })))
+      ;(search?.notes ?? []).forEach((note, i) => lines.push(row('hit-note-' + i, note, { mark: '✎', markColor: MUTED, dim: true })))
     }
 
-    const footerText = snapshot
-      ? snapshot.project + (snapshot.branch ? ' @ ' + snapshot.branch : '') + ' · ' + snapshot.stats.entities + ' entities · ' +
-        snapshot.stats.relations + ' relations · ' + snapshot.stats.entries + ' notes'
-      : ''
+    // ── header ──
+    const where = (session?.location ?? '').startsWith('server') ? 'server' : 'this machine'
+    const header = graphic ? (
+      <Box key="head" flexDirection="column" rowGap="sm" flexShrink={0}>
+        <Box flexDirection="row" alignItems="center" columnGap="sm">
+          <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text size="heading" weight="semibold" wrap="truncate-end">{snapshot?.project ?? 'Task Runner'}</Text>
+            <Text size="caption" dimColor wrap="truncate-end">
+              {(snapshot?.branch ? '⎇ ' + snapshot.branch + ' · ' : '') +
+                (snapshot ? snapshot.stats.entities + ' entities · ' + snapshot.stats.entries + ' notes · ' : '') +
+                'memory on ' + where}
+            </Text>
+          </Box>
+          <Button key="refresh" label="↻" plain onPress={reload} />
+        </Box>
+        <Box flexDirection="row" columnGap="xs" flexWrap="wrap">
+          {TABS.map(item => (
+            <Button key={'tab-' + item.id} label={item.label} variant={tab === item.id ? 'primary' : 'secondary'} onPress={() => select(item.id)} />
+          ))}
+        </Box>
+      </Box>
+    ) : (
+      <Box key="head" flexDirection="column" flexShrink={0}>
+        <Box flexDirection="row" columnGap={1}>
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text wrap="truncate-end">
+              <Text bold color="claude">{snapshot?.project ?? 'Task Runner'}</Text>
+              <Text dimColor>{(snapshot?.branch ? ' ⎇ ' + snapshot.branch : '') + ' · memory on ' + where}</Text>
+            </Text>
+          </Box>
+          <Button key="refresh" label="↻" plain hotkey="r" onPress={reload} />
+        </Box>
+        <Box flexDirection="row" columnGap={2} flexWrap="wrap">
+          {TABS.map((item, i) => (
+            <Button key={'tab-' + item.id} plain hotkey={String(i + 1)} dimColor={tab !== item.id} onPress={() => select(item.id)}>
+              {tab === item.id ? <Text bold color="claude">{item.label}</Text> : item.label}
+            </Button>
+          ))}
+        </Box>
+        <Text dimColor>{'─'.repeat(Math.max(10, width - 1))}</Text>
+      </Box>
+    )
+    const headerRows = graphic ? 7.5 : 3 + (width < 70 ? 1 : 0)
 
-    // The window: what fits between the fixed rows, counted in the pane's rows. Desktop text is taller than a row.
-    const unit = graphic ? 1.5 : 1
-    const fixedRows = graphic ? 9 + (top ? 5 : 0) : 4 + (width < 60 ? 1 : 0) + (top ? (tab === 'graph' ? 10 : 2) : 0)
-    const room = fullHeight ? Math.max(3, (fullHeight - fixedRows) / unit) : Infinity
+    // ── the window over the list ──
+    const footerRows = graphic ? 2.5 : 1
+    const room = fullHeight ? Math.max(3, fullHeight - headerRows - topRows - footerRows) : Infinity
     const fits = (from: number) => {
       let used = 0
       let end = from
@@ -982,21 +1223,20 @@ export const register: Register = (on, options) => {
 
     const pager =
       above || below ? (
-        <Box key="pager" flexDirection="row" columnGap={2} flexShrink={0}>
+        <Box key="pager" flexDirection="row" columnGap={2} justifyContent="center" flexShrink={0}>
           {above ? <Button key="page-up" label={'↑ ' + above + ' more'} plain dimColor hotkey={graphic ? undefined : 'k'} onPress={() => moveList($, -Math.max(1, end - start - 1))} /> : null}
           {below ? <Button key="page-down" label={'↓ ' + below + ' more'} plain dimColor hotkey={graphic ? undefined : 'j'} onPress={() => moveList($, Math.max(1, end - start - 1))} /> : null}
         </Box>
       ) : null
 
     const body = (
-      <Box key="pane-top" flexDirection="column" height={fullHeight} overflow="hidden" rowGap={graphic ? 1 : 0}>
-        {tabs}
+      <Box key="pane-top" flexDirection="column" height={fullHeight} overflow="hidden" rowGap={graphic ? 'sm' : 0} padding={graphic ? 'xs' : undefined}>
+        {header}
         {top}
-        <Box key="list" flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+        <Box key="list" flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden" rowGap={graphic ? 'xs' : 0}>
           {lines.slice(start, end).map(l => l.node)}
         </Box>
         {pager}
-        <Text key="footer" dimColor wrap="truncate-end">{footerText}</Text>
       </Box>
     )
     if (!fullHeight) return body
