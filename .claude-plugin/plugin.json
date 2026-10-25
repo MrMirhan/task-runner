@@ -1,0 +1,52 @@
+{
+  "name": "task-runner",
+  "displayName": "Task Runner",
+  "version": "1.0.0",
+  "description": "Persistent knowledge-graph memory and a task runner for your agent. Local SQLite, MCP tools, a session-start briefing, a live side panel and memory reminders.",
+  "author": {
+    "name": "Mirhan"
+  },
+  "repository": "https://github.com/MrMirhan/claude-task-runner-mcp",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "knowledge-graph",
+    "mcp",
+    "tasks",
+    "sqlite",
+    "second-brain"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "nudge": {
+      "type": "boolean",
+      "title": "Remind the agent to save memory",
+      "description": "After a turn that edits many files or commits without saving anything to memory, add a one-line reminder to your next prompt.",
+      "default": true
+    },
+    "toasts": {
+      "type": "boolean",
+      "title": "Show a toast when memory changes",
+      "description": "Show what the agent remembers, links or forgets, so you can catch bad memory early.",
+      "default": true
+    },
+    "band": {
+      "type": "boolean",
+      "title": "Show task progress above the prompt",
+      "description": "While a task group has open tasks, show a one-line progress bar above the prompt.",
+      "default": true
+    },
+    "commitNotes": {
+      "type": "boolean",
+      "title": "Record commits in memory",
+      "description": "After each git commit the agent makes, save a short change note (hash, subject, size) to project memory. No model call is involved.",
+      "default": true
+    },
+    "approve": {
+      "type": "boolean",
+      "title": "Skip permission prompts for the memory tools",
+      "description": "Approve this plugin's own memory and task tools automatically. They only touch the local memory database. clear_tasks still asks.",
+      "default": true
+    }
+  }
+}

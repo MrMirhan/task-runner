@@ -1,0 +1,18 @@
+{
+  "description": "Session briefing from memory, plus the live panel, reminders and slash commands",
+  "modules": ["./register.tsx"],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/cli.js\" hook session-start",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

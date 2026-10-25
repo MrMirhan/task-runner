@@ -1,0 +1,129 @@
+import type { Db } from "./db.ts";
+
+const FTS_TOKENIZER = "porter unicode61 remove_diacritics 2";
+
+const migrations: Array<(db: Db) => void> = [
+  (db) => {
+    db.exec(`
+      CREATE TABLE projects (
+        key TEXT PRIMARY KEY,
+        project_path TEXT,
+        project_name TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_projects_path ON projects(project_path);
+
+      CREATE TABLE entries (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        project_key TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+        scope TEXT NOT NULL DEFAULT 'project',
+        scope_ref TEXT,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tags TEXT,
+        session_id TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX idx_entries_project ON entries(project_key, scope, scope_ref);
+      CREATE INDEX idx_entries_created ON entries(project_key, created_at DESC);
+
+      CREATE TABLE entities (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        project_key TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        summary TEXT,
+        properties TEXT,
+        importance REAL NOT NULL DEFAULT 0.5,
+        access_count INTEGER NOT NULL DEFAULT 0,
+        last_accessed INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        valid_until INTEGER,
+        UNIQUE (project_key, name, entity_type)
+      );
+      CREATE INDEX idx_entities_project ON entities(project_key, entity_type);
+
+      CREATE TABLE observations (
+        id TEXT PRIMARY KEY,
+        entity_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'agent',
+        confidence REAL NOT NULL DEFAULT 1.0,
+        created_at INTEGER NOT NULL,
+        valid_until INTEGER,
+        superseded_by TEXT
+      );
+      CREATE INDEX idx_observations_entity ON observations(entity_id);
+
+      CREATE TABLE relations (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+        target_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+        relation_type TEXT NOT NULL,
+        weight REAL NOT NULL DEFAULT 1.0,
+        context TEXT,
+        created_at INTEGER NOT NULL,
+        valid_until INTEGER,
+        UNIQUE (source_id, target_id, relation_type)
+      );
+      CREATE INDEX idx_relations_source ON relations(source_id);
+      CREATE INDEX idx_relations_target ON relations(target_id);
+
+      CREATE TABLE tasks (
+        project_key TEXT NOT NULL REFERENCES projects(key) ON DELETE CASCADE,
+        task_group TEXT NOT NULL,
+        id TEXT NOT NULL,
+        index_num INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        result TEXT,
+        error TEXT,
+        system_prompt TEXT,
+        started_at INTEGER,
+        completed_at INTEGER,
+        execution_time_ms INTEGER,
+        result_size INTEGER,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (project_key, task_group, id)
+      );
+      CREATE INDEX idx_tasks_status ON tasks(project_key, task_group, status, index_num);
+
+      CREATE VIRTUAL TABLE entries_fts USING fts5(
+        title, content, tags,
+        tokenize = '${FTS_TOKENIZER}'
+      );
+      CREATE VIRTUAL TABLE entities_fts USING fts5(
+        name, summary, facts,
+        tokenize = '${FTS_TOKENIZER}'
+      );
+    `);
+  },
+];
+
+export const SCHEMA_VERSION = migrations.length;
+
+export function migrate(db: Db): void {
+  db.exec("CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  const row = db.get<{ value: string }>("SELECT value FROM schema_meta WHERE key = 'version'");
+  const current = row ? Number(row.value) : 0;
+  if (current > SCHEMA_VERSION) {
+    throw new Error(
+      `Database schema v${current} is newer than this build supports (v${SCHEMA_VERSION}). Update task-runner-mcp.`,
+    );
+  }
+  for (let v = current; v < SCHEMA_VERSION; v++) {
+    db.transaction(() => {
+      migrations[v](db);
+      db.run(
+        "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        String(v + 1),
+      );
+    });
+  }
+}

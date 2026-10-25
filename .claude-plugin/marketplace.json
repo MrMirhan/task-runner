@@ -1,0 +1,11 @@
+{
+  "name": "task-runner",
+  "owner": { "name": "Mirhan" },
+  "plugins": [
+    {
+      "name": "task-runner",
+      "source": "./",
+      "description": "Persistent knowledge-graph memory and a task runner: MCP tools, session briefing, live panel."
+    }
+  ]
+}

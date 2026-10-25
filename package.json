@@ -1,0 +1,46 @@
+{
+  "name": "task-runner-mcp",
+  "version": "1.0.0",
+  "description": "Persistent knowledge-graph memory and a task runner for AI coding agents. Local-first MCP server, Claude Code plugin, hooks and live panel.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "memory",
+    "knowledge-graph",
+    "claude-code",
+    "task-runner",
+    "sqlite"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "task-runner-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    ".claude-plugin",
+    ".mcp.json",
+    "hooks",
+    "types",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --no-warnings \"test/**/*.spec.ts\"",
+    "check": "npm run typecheck && npm test",
+    "build:dashboard": "npm --prefix dashboard install && npm --prefix dashboard run build && node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@types/node": "^22.13.0",
+    "esbuild": "^0.25.0",
+    "typescript": "~5.9.0",
+    "zod": "^3.25.0"
+  }
+}
