@@ -278,6 +278,14 @@ export class Store {
       }
 
       this.db.run("UPDATE OR REPLACE project_paths SET project_key = ? WHERE project_key = ?", into, from);
+      this.db.run("UPDATE taste SET ref = ? WHERE scope = 'project' AND ref = ?", into, from);
+      this.db.run("UPDATE OR REPLACE worklog_minutes SET project_key = ? WHERE project_key = ?", into, from);
+      this.db.run("UPDATE OR REPLACE worklog_facts SET project_key = ? WHERE project_key = ?", into, from);
+      this.db.run("UPDATE OR REPLACE worklog_exports SET project_key = ? WHERE project_key = ?", into, from);
+      this.db.run(
+        "UPDATE projects SET project_path = (SELECT project_path FROM projects WHERE key = ?) WHERE key = ? AND project_path IS NULL",
+        from, into,
+      );
       this.db.run("DELETE FROM projects WHERE key = ?", from);
       this.reindexAll();
       return { merged: from, into, ...moved };

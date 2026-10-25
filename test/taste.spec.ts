@@ -97,3 +97,14 @@ test("preferences travel with an export", () => {
   fresh.importAll(data);
   assert.equal(fresh.tasteList({ project: P })[0].rule, "Be brief.");
 });
+
+test("merging projects carries their preferences and keeps the folder", () => {
+  const { store } = memoryStore();
+  store.setContext({ project: "Shop", project_path: "/work/shop" });
+  store.setContext({ project: "acme-shop" });
+  store.tasteLearn({ project: "Shop", items: [{ scope: "project", rule: "Never touch the billing module." }] });
+  store.mergeProjects("Shop", "acme-shop");
+  assert.equal(store.tasteList({ project: "acme-shop" })[0].rule, "Never touch the billing module.");
+  assert.equal(store.findProjectByPath("/work/shop"), "acme-shop");
+  assert.equal(store.listProjects().find((p) => p.key === "acme-shop")?.project_path, "/work/shop");
+});

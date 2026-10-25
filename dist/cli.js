@@ -39,7 +39,7 @@ var init_constants = __esm({
   "src/core/constants.ts"() {
     "use strict";
     SERVER_NAME = "task-runner";
-    SERVER_VERSION = "1.1.2";
+    SERVER_VERSION = "1.1.3";
     ENTITY_TYPES = [
       "preference",
       "decision",
@@ -23168,6 +23168,15 @@ var init_store = __esm({
             this.indexEntity(twin.id);
           }
           this.db.run("UPDATE OR REPLACE project_paths SET project_key = ? WHERE project_key = ?", into, from);
+          this.db.run("UPDATE taste SET ref = ? WHERE scope = 'project' AND ref = ?", into, from);
+          this.db.run("UPDATE OR REPLACE worklog_minutes SET project_key = ? WHERE project_key = ?", into, from);
+          this.db.run("UPDATE OR REPLACE worklog_facts SET project_key = ? WHERE project_key = ?", into, from);
+          this.db.run("UPDATE OR REPLACE worklog_exports SET project_key = ? WHERE project_key = ?", into, from);
+          this.db.run(
+            "UPDATE projects SET project_path = (SELECT project_path FROM projects WHERE key = ?) WHERE key = ? AND project_path IS NULL",
+            from,
+            into
+          );
           this.db.run("DELETE FROM projects WHERE key = ?", from);
           this.reindexAll();
           return { merged: from, into, ...moved };
